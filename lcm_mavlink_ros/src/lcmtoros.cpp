@@ -40,6 +40,16 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
 
 	switch(msg->msgid)
 	{
+	case MAVLINK_MSG_ID_COMMAND:
+		{
+                        lcm_mavlink_ros::COMMAND COMMAND_msg;
+                        convertMavlinkCOMMANDToROS(msg, COMMAND_msg);
+                        COMMAND_pub.publish(COMMAND_msg);
+
+			if (verbose)
+				ROS_INFO("Published COMMAND message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
+		}
+		break;
 	case MAVLINK_MSG_ID_VICON_POSITION_ESTIMATE:
 		{
                         geometry_msgs::PoseStamped vicon_msg;
@@ -59,16 +69,6 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
 
 			if (verbose)
 				ROS_INFO("Published Imu message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
-		}
-		break;
-	case MAVLINK_MSG_ID_COMMAND:
-		{
-                        lcm_mavlink_ros::COMMAND COMMAND_msg;
-                        convertMavlinkCOMMANDToROS(msg, COMMAND_msg);
-                        COMMAND_pub.publish(COMMAND_msg);
-
-			if (verbose)
-				ROS_INFO("Published COMMAND message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
 		}
 		break;
 	}
