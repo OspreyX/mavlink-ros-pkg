@@ -40,21 +40,21 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
 
 	switch(msg->msgid)
 	{
-	case MAVLINK_MSG_ID_ATTITUDE:
-		{
-                        sensor_msgs::Imu imu_msg;
-                        convertMavlinkAttitudeToROS(msg, imu_msg);
-                        attitude_pub.publish(imu_msg);
-
-			if (verbose)
-				ROS_INFO("Published Imu message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
-		}
-		break;
 	case MAVLINK_MSG_ID_VICON_POSITION_ESTIMATE:
 		{
                         geometry_msgs::PoseStamped vicon_msg;
                         convertMavlinkVicon_Position_EstimateToROS(msg, vicon_msg);
                         vicon_pub.publish(vicon_msg);
+
+			if (verbose)
+				ROS_INFO("Published Vicon message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
+		}
+		break;
+	case MAVLINK_MSG_ID_ATTITUDE:
+		{
+                        sensor_msgs::Imu imu_msg;
+                        convertMavlinkAttitudeToROS(msg, imu_msg);
+                        attitude_pub.publish(imu_msg);
 
 			if (verbose)
 				ROS_INFO("Published Imu message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
