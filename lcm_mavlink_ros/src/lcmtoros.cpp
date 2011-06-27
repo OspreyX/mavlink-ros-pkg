@@ -9,6 +9,8 @@
 
 ros::Publisher mavlink_pub;
 ros::Publisher attitude_pub;
+ros::Publisher vicon_pub;
+
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
 bool verbose;
@@ -43,6 +45,16 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
                         sensor_msgs::Imu imu_msg;
                         convertMavlinkAttitudeToROS(msg, imu_msg);
                         attitude_pub.publish(imu_msg);
+
+			if (verbose)
+				ROS_INFO("Published Imu message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
+		}
+		break;
+	case MAVLINK_MSG_ID_VICON_POSITION_ESTIMATE:
+		{
+                        geometry_msgs::PoseStamped vicon_msg;
+                        convertMavlinkVicon_Position_EstimateToROS(msg, vicon_msg);
+                        vicon_pub.publish(vicon_msg);
 
 			if (verbose)
 				ROS_INFO("Published Imu message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
@@ -91,6 +103,10 @@ int main(int argc, char **argv) {
 
 	ros::NodeHandle attitude_nh;
 	attitude_pub = attitude_nh.advertise<sensor_msgs::Imu>("/fromMAVLINK/Imu", 1000);
+
+
+	ros::NodeHandle vicon_nh;
+	vicon_pub = vicon_nh.advertise<geometry_msgs::PoseStamped>("/fromMAVLINK/Vicon", 1000);
 
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages
