@@ -1,4 +1,6 @@
 #include "mavlink.h"
+#include "lcm_mavlink_ros/Mavlink.h"	// ROS message definition
+#include "lcm_mavlink_ros/COMMAND.h"
 
 /**
  * Takes a ROS-Mavlink-message (mavlink_ros_msg) and converts it into a Mavlink-Message (msg)
