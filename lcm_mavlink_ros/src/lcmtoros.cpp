@@ -3,12 +3,14 @@
 #include <mavconn.h>			// MAVCONN includes (this includes MAVLINK and LCM)
 #include <glib.h>
 
-#include "lcm_mavlink_ros/Mavlink.h"	// ROS message definition
 #include "mavlinkros.h"			// Helper functions to convert a MAVLINK message in to a MAVLINK-ROS message and vice versa
 #include "mavlink_attitude_ros.h"	// Helper function to convert a MAVLINK attitude message to sensor_msgs/Imu message
 
 ros::Publisher mavlink_pub;
 ros::Publisher attitude_pub;
+ros::Publisher vicon_pub;
+ros::Publisher COMMAND_pub;
+
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
 bool verbose;
@@ -38,6 +40,27 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
 
 	switch(msg->msgid)
 	{
+	case MAVLINK_MSG_ID_COMMAND:
+		{
+                        lcm_mavlink_ros::COMMAND COMMAND_msg;
+                        convertMavlinkCOMMANDToROS(msg, COMMAND_msg);
+                        COMMAND_pub.publish(COMMAND_msg);
+
+			if (verbose)
+				ROS_INFO("Published COMMAND message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
+		}
+		break;
+	case MAVLINK_MSG_ID_VICON_POSITION_ESTIMATE:
+		{
+                        geometry_msgs::PoseStamped vicon_msg;
+                        convertMavlinkVicon_Position_EstimateToROS(msg, vicon_msg);
+                        vicon_pub.publish(vicon_msg);
+
+			if (verbose)
+				ROS_INFO("Published Vicon message (sys:%d|comp:%d):\n", msg->sysid, msg->compid);
+		}
+
+		break;
 	case MAVLINK_MSG_ID_ATTITUDE:
 		{
                         sensor_msgs::Imu imu_msg;
@@ -91,6 +114,13 @@ int main(int argc, char **argv) {
 
 	ros::NodeHandle attitude_nh;
         attitude_pub = attitude_nh.advertise<sensor_msgs::Imu>("/fromMAVLINK/Imu", 1);
+
+
+	ros::NodeHandle vicon_nh;
+	vicon_pub = vicon_nh.advertise<geometry_msgs::PoseStamped>("/fromMAVLINK/Vicon", 1000);
+
+	ros::NodeHandle COMMAND_nh;
+	COMMAND_pub = vicon_nh.advertise<lcm_mavlink_ros::COMMAND>("/fromMAVLINK/COMMAND", 1000);
 
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages
