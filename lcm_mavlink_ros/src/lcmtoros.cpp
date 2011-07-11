@@ -117,10 +117,10 @@ int main(int argc, char **argv) {
 
 
 	ros::NodeHandle vicon_nh;
-	vicon_pub = vicon_nh.advertise<geometry_msgs::PoseStamped>("/fromMAVLINK/Vicon", 1000);
+        vicon_pub = vicon_nh.advertise<geometry_msgs::PoseStamped>("/fromMAVLINK/Vicon", 1);
 
 	ros::NodeHandle COMMAND_nh;
-	COMMAND_pub = vicon_nh.advertise<lcm_mavlink_ros::COMMAND>("/fromMAVLINK/COMMAND", 1000);
+        COMMAND_pub = vicon_nh.advertise<lcm_mavlink_ros::COMMAND>("/fromMAVLINK/COMMAND", 1);
 
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages
