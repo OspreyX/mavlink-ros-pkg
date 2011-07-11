@@ -87,10 +87,10 @@ int main(int argc, char **argv) {
 	}
 
 	ros::NodeHandle mavlink_nh;
-	mavlink_pub = mavlink_nh.advertise<lcm_mavlink_ros::Mavlink> ("/fromMAVLINK", 1000);
+        mavlink_pub = mavlink_nh.advertise<lcm_mavlink_ros::Mavlink> ("/fromMAVLINK", 1);
 
 	ros::NodeHandle attitude_nh;
-	attitude_pub = attitude_nh.advertise<sensor_msgs::Imu>("/fromMAVLINK/Imu", 1000);
+        attitude_pub = attitude_nh.advertise<sensor_msgs::Imu>("/fromMAVLINK/Imu", 1);
 
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages

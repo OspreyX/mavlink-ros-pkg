@@ -98,13 +98,13 @@ int main(int argc, char **argv)
 	}
 
 	ros::NodeHandle mavlink_nh;
-	mavlink_sub = mavlink_nh.subscribe("/toMAVLINK", 1000, mavlinkCallback);
+        mavlink_sub = mavlink_nh.subscribe("/toMAVLINK", 1, mavlinkCallback);
 
 	ros::NodeHandle pose_nh;
-	pose_sub = pose_nh.subscribe("/toMAVLINK/bodyPose", 10, poseCallback);
+        pose_sub = pose_nh.subscribe("/toMAVLINK/bodyPose", 1, poseCallback);
 
 	ros::NodeHandle poseStamped_nh;
-	poseStamped_sub = poseStamped_nh.subscribe("/toMAVLINK/bodyPoseStamped", 10, poseStampedCallback);
+        poseStamped_sub = poseStamped_nh.subscribe("/toMAVLINK/bodyPoseStamped", 1, poseStampedCallback);
 
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages ->
