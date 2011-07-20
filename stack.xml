@@ -1,0 +1,15 @@
+<stack>
+  <description brief="mavlink-ros-pkg"></description>
+  <author>Maintained by Lorenz Meier, Petri Tanskanen, Lionel Heng</author>
+  <license>,BSD</license>  
+  <review status="unreviewed" notes="Unstable and in active development"/>
+  <url>http://www.ros.org/wiki/mavlink-ros-pkg</url>
+  <depend stack="common" /> <!-- actionlib -->
+  <depend stack="common_msgs" /> <!-- actionlib_msgs, geometry_msgs -->
+  <depend stack="diagnostics" /> <!-- diagnostic_updater -->
+  <depend stack="driver_common" /> <!-- dynamic_reconfigure -->
+  <depend stack="geometry" /> <!-- tf -->
+  <depend stack="ros" />
+  <depend stack="ros_comm" /> <!-- roscpp -->
+
+</stack>
