@@ -1,10 +1,16 @@
 IMPORTANT NOTE: PLEASE READ THE INDIVIDUAL README FILES IN THE SUBFOLDERS FOR INSTALLATION INSTRUCTIONS
 
 
+
 If rosmake is run from this directory, it will attempt to compile ALL packages. This might however FAIL if you don't have all dependencies installed. It is therefore recommended to install from within individual subfolders
+
 
 lcm_mavlink_ros		ROS node that communicates with the MAVCONN middleware
 
-serial_mavlink_ros	ROS node that directly interfaces a serial port and communicates with a MAVLINK compatible device (i.e. APM / ACM / UDB / pxIMU)
 
-mavconn_asctec		ROS node that interfaces the MAVCONN middleware to an Ascending Technologies multi-rotor via their Asctec-ROS interface
+serial_mavlink_ros	ROS node that directly interfaces a serial port and communicates with a MAVLINK
+			compatible device (i.e. APM / ACM / UDB / pxIMU)
+
+
+mavconn_asctec		ROS node that interfaces the MAVCONN middleware to an Ascending Technologies
+			multi-rotor via their Asctec-ROS interface
