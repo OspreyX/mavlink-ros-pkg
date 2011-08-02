@@ -21,3 +21,4 @@ serial_mavlink_ros/bin*
 serial_mavlink_ros/msg_gen*
 serial_mavlink_ros/msg/lisp*
 serial_mavlink_ros/src/serial_mavlink_ros*
+mavconn_asctec/bin*

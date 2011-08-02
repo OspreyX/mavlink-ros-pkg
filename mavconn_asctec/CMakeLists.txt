@@ -41,4 +41,7 @@ INCLUDE_DIRECTORIES(
 rosbuild_add_executable(mavconn_asctec_bridge src/mavconn_asctec_bridge.cpp)
 target_link_libraries(mavconn_asctec_bridge
   mavconn_lcm
+  lcm
+  ${GLIB2_LIBRARY}
+  ${GTHREAD2_LIBRARY}
 )

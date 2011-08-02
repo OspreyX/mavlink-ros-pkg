@@ -40,11 +40,17 @@ INCLUDE_DIRECTORIES(
 
 rosbuild_add_executable(lcmtoros src/lcmtoros.cpp)
 target_link_libraries(lcmtoros
+  ${GLIB2_LIBRARY}
+  ${GTHREAD2_LIBRARY}
+  lcm
   mavconn_lcm
 )
 
 rosbuild_add_executable(rostolcm src/rostolcm.cpp)
 target_link_libraries(rostolcm
+  ${GLIB2_LIBRARY}
+  ${GTHREAD2_LIBRARY}
+  lcm
   mavconn_lcm
 )
 

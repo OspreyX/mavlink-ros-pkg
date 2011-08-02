@@ -395,7 +395,7 @@ int main(int argc, char **argv)
 
 		int status = select(lcm_fd + 1, &fds, 0, 0, &timeout);
 
-		if (status != 0 && FD_ISSET(lcm_fd, &fds) && ros::isShuttingDown())
+		if (status != 0 && FD_ISSET(lcm_fd, &fds) && !ros::isShuttingDown())
 		{
 			// LCM has events ready to be processed.
 			lcm_handle(lcm);
