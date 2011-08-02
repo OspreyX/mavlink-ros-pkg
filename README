@@ -1,5 +1,18 @@
-Please read the specific REAME files in the subfolders for installation instructions of the different nodes.
+IMPORTANT NOTE: PLEASE READ THE INDIVIDUAL README FILES IN THE SUBFOLDERS FOR INSTALLATION INSTRUCTIONS
 
-lcm_mavlink_ros		ROS node that communicates with the MAVCONN middleware
 
-serial_mavlink_ros	ROS node that directly interfaces a serial port and communicates with a MAVLINK compatible device (i.e. IMU)
+
+If rosmake is run from this directory, it will attempt to compile ALL packages. This might however FAIL if you don't have all dependencies installed. It is therefore recommended to install from within individual subfolders
+
+serial_mavlink_ros      ROS node that directly interfaces a serial port and communicates with a MAVLINK
+                        compatible device (i.e. APM / ACM / UDB / pxIMU) or with a radio modem (e.g. XBee)
+                        and a ground control station (e.g. QGroundControl or APM Planner).
+
+
+lcm_mavlink_ros		ROS node that communicates with the MAVCONN aerial robotics middleware
+			(http://github.com/pixhawk/mavconn). MAVCONN provides computer-vision
+			specific interfaces and algorithms and is very lightweight.
+
+
+mavconn_asctec		ROS node that interfaces the MAVCONN middleware to an Ascending Technologies
+			multi-rotor via their Asctec-ROS interface
