@@ -38,7 +38,8 @@ void mavlinkCallback(const lcm_mavlink_ros::Mavlink::ConstPtr& mavlink_ros_msg)
 	/**
 	 * Send mavlink_message to LCM (so that the rest of the MAVConn world can hear us)
 	 */
-	mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 
 	if (verbose)
 		ROS_INFO("Sent Mavlink from ROS to LCM, Message-ID: [%i]", mavlink_ros_msg->msgid);
@@ -52,8 +53,8 @@ void poseCallback(const geometry_msgs::Pose &pose_msg)
 	//send MAVLINK vision position estimate message
 	mavlink_message_t msg;
 	convertROSPoseToMavlink(sysid, compid, pose_msg, timestamp, &msg);
-	mavlink_message_t_publish(lcm, "MAVLINK", &msg);
-
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 	if (verbose)
 		ROS_INFO("Sent Mavlink vision position estimate message");
 }
@@ -66,8 +67,8 @@ void poseStampedCallback(const geometry_msgs::PoseStamped &pose_msg)
 	//send MAVLINK vision position estimate message
 	mavlink_message_t msg;
 	convertROSPoseStampedToMavlink(sysid, compid, pose_msg, timestamp, &msg);
-	mavlink_message_t_publish(lcm, "MAVLINK", &msg);
-
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 	if (verbose)
 		ROS_INFO("Sent Mavlink vision position estimate message");
 }

@@ -233,14 +233,16 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	mat.getEulerYPR(yaw, pitch, roll);
 
 	mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
-	mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 
 	float x = poseStampedMsg.pose.position.x;
 	float y = poseStampedMsg.pose.position.y;
 	float z = poseStampedMsg.pose.position.z;
 
-	mavlink_msg_local_position_pack(sysid, compid, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
-	mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 
 	if (verbose)
 	{
@@ -280,9 +282,10 @@ paramCheckCallback(const ros::TimerEvent&)
 	if (homeShift)
 	{
 		mavlink_message_t msg;
-		mavlink_msg_gps_local_origin_set_pack(sysid, compid, &msg,
+		mavlink_msg_gps_global_origin_pack(sysid, compid, &msg,
 				homeLatitude, homeLongitude, homeAltitude);
-		mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+		//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+		sendMAVLinkMessage(lcm, &msg);
 
 		if (verbose)
 		{
@@ -293,15 +296,16 @@ paramCheckCallback(const ros::TimerEvent&)
 
 void
 mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
-			   const mavlink_message_t* msg, void* user)
+			   const mavconn_mavlink_msg_container_t* container, void* user)
 {
+	const mavlink_message_t* msg = getMAVLinkMsgPtr(container);
 	switch (msg->msgid)
 	{
 		// get setpoint from MAVLINK
-		case MAVLINK_MSG_ID_LOCAL_POSITION_SETPOINT_SET:
+		case MAVLINK_MSG_ID_SET_LOCAL_POSITION_SETPOINT:
 		{
-			mavlink_local_position_setpoint_set_t setpoint;
-			mavlink_msg_local_position_setpoint_set_decode(msg, &setpoint);
+			mavlink_set_local_position_setpoint_t setpoint;
+			mavlink_msg_set_local_position_setpoint_decode(msg, &setpoint);
 
 			// publish goal to ROS
 			asctec_hl_comm::WaypointActionGoal goal;
@@ -371,8 +375,8 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	mavlink_message_t_subscription_t* mavlinkSub =
-		mavlink_message_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &waypointPub);
+	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
+		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &waypointPub);
 	
 	// start thread(s) to listen for ROS messages
 	ros::AsyncSpinner spinner(1);
@@ -404,7 +408,7 @@ int main(int argc, char **argv)
 
 	delete nh;
 
-	mavlink_message_t_unsubscribe(lcm, mavlinkSub);
+	mavconn_mavlink_msg_container_t_unsubscribe(lcm, mavlinkSub);
 	lcm_destroy(lcm);
 
 	return 0;

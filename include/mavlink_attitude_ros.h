@@ -37,8 +37,8 @@ static inline void convertMavlinkVicon_Position_EstimateToROS(const mavlink_mess
 
 static inline void convertMavlinkCOMMANDToROS(const mavlink_message_t *msg, lcm_mavlink_ros::COMMAND &COMMAND_msg)
 {
-	mavlink_command_t COMMANDmsg;
-	mavlink_msg_command_decode(msg, &COMMANDmsg);
+	mavlink_command_long_t COMMANDmsg;
+	mavlink_msg_command_long_decode(msg, &COMMANDmsg);
 
 	COMMAND_msg.command=COMMANDmsg.command;
 	COMMAND_msg.confirmation=COMMANDmsg.confirmation;

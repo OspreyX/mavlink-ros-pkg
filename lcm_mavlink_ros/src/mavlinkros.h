@@ -10,9 +10,11 @@ static inline void createMavlinkFromROS(const lcm_mavlink_ros::Mavlink::ConstPtr
 	msg->msgid = mavlink_ros_msg->msgid;
 
 	//Copy payload from mavlink_msg (from ROS) to the new "real" mavlink message
-	copy(mavlink_ros_msg->payload.begin(), mavlink_ros_msg->payload.end(), msg->payload);
+	//copy(mavlink_ros_msg->payload.begin(), mavlink_ros_msg->payload.end(), msg->payload64);
+	//uint8_t buf[MAVLINK_MAX_MSG_LEN];
+	//uint16_t len = mavlink_msg_to_send_buffer(&buf, msg);
 
-	mavlink_finalize_message(msg, mavlink_ros_msg->sysid, mavlink_ros_msg->compid, mavlink_ros_msg->len);
+	//mavlink_finalize_message(msg, mavlink_ros_msg->sysid, mavlink_ros_msg->compid, mavlink_ros_msg->len);
 }
 
 /**
@@ -29,6 +31,6 @@ static inline void createROSFromMavlink(const mavlink_message_t* mavlink_msg, lc
 
 	for (int i = 0; i < mavlink_msg->len; i++)
 	{
-		(mavlink_ros_msg->payload).push_back(mavlink_msg->payload[i]);
+		(mavlink_ros_msg->payload).push_back(mavlink_msg->payload64[i]);
 	}
 }

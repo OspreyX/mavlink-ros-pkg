@@ -17,8 +17,9 @@ bool verbose;
 
 lcm_t *lcm;
 
-static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, const mavlink_message_t* msg, void * user)
+static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, const mavconn_mavlink_msg_container_t* container, void * user)
 {
+	const mavlink_message_t* msg = getMAVLinkMsgPtr(container);
 	if (verbose)
 		ROS_INFO("Received message #%d on channel \"%s\" (sys:%d|comp:%d):\n", msg->msgid, channel, msg->sysid, msg->compid);
 
@@ -40,7 +41,7 @@ static void mavlink_handler (const lcm_recv_buf_t *rbuf, const char * channel, c
 
 	switch(msg->msgid)
 	{
-	case MAVLINK_MSG_ID_COMMAND:
+	case MAVLINK_MSG_ID_COMMAND_LONG:
 		{
                         lcm_mavlink_ros::COMMAND COMMAND_msg;
                         convertMavlinkCOMMANDToROS(msg, COMMAND_msg);
@@ -130,7 +131,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	mavlink_message_t_subscription_t * comm_sub = mavlink_message_t_subscribe(
+	mavconn_mavlink_msg_container_t_subscription_t * comm_sub = mavconn_mavlink_msg_container_t_subscribe(
 			lcm, "MAVLINK", &mavlink_handler, NULL);
 
 	while (ros::ok())
@@ -161,7 +162,7 @@ int main(int argc, char **argv) {
 	//	loop_rate.sleep();
 	//}
 
-	mavlink_message_t_unsubscribe (lcm, comm_sub);
+	mavconn_mavlink_msg_container_t_unsubscribe (lcm, comm_sub);
 	lcm_destroy (lcm);
 //	if (verbose) printf("Trying GThread Join");
 //	g_thread_join(lcm_thread);
