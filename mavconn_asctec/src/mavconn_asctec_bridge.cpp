@@ -356,8 +356,8 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
-	ros::Subscriber poseStampedSub = nh->subscribe("fcu/current_pose", 10, poseStampedCallback);
-	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>("fcu/waypoint/goal", 10);
+	ros::Subscriber poseStampedSub = nh->subscribe("hex/fcu/current_pose", 10, poseStampedCallback);
+	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>("hex/fcu/waypoint/goal", 10);
 	
 	// check for changed parameters on parameter server
 	ros::Timer paramCheckTimer = nh->createTimer(ros::Duration(2.0), paramCheckCallback);
