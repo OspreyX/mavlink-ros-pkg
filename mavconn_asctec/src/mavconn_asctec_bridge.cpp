@@ -345,6 +345,18 @@ static GOptionEntry entries[] =
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Verbose output", NULL },
 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, 0 } };
 
+void* lcm_wait(void* lcm_ptr)
+{
+	lcm_t* lcm = (lcm_t*) lcm_ptr;
+	// Blocking wait for new data
+	while (1)
+	{
+		lcm_handle(lcm);
+		if (ros::isShuttingDown()) break;
+	}
+	return NULL;
+}
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "mavconn_asctec_bridge");
@@ -378,6 +390,22 @@ int main(int argc, char **argv)
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &waypointPub);
 	
+	// Initialize LCM receiver thread
+	GThread* lcm_thread;
+	GError* err;
+	
+	if( !g_thread_supported() )
+	{
+		g_thread_init(NULL);
+		// Only initialize g thread if not already done
+	}
+	
+	if( (lcm_thread = g_thread_create((GThreadFunc)lcm_wait, (void *)lcm, TRUE, &err)) == NULL)
+	{
+		printf("Thread creation failed: %s!!\n", err->message );
+		g_error_free ( err ) ;
+	}
+
 	// start thread(s) to listen for ROS messages
 	ros::AsyncSpinner spinner(1);
 	spinner.start();
@@ -393,23 +421,32 @@ int main(int argc, char **argv)
 
 	while (ros::ok())
 	{
-		fd_set fds;
-		FD_ZERO(&fds);
-		FD_SET(lcm_fd, &fds);
+		//int lcm_fd = lcm_get_fileno(lcm);
+		//fd_set fds;
+		//FD_ZERO(&fds);
+		//FD_SET(lcm_fd, &fds);
 
-		int status = select(lcm_fd + 1, &fds, 0, 0, &timeout);
+		//int status = select(lcm_fd + 1, &fds, 0, 0, &timeout);
 
-		if (status != 0 && FD_ISSET(lcm_fd, &fds) && !ros::isShuttingDown())
-		{
+		//if (status == 0)
+		//{
+		//	printf("WAITING!\n");
+		//}
+		//else if (status !=0 && FD_ISSET(lcm_fd, &fds) && !ros::isShuttingDown())
+		//{
 			// LCM has events ready to be processed.
-			lcm_handle(lcm);
-		}
+		//	lcm_handle(lcm);
+		//}
+		//if (ros::isShuttingDown()) break;
+//		lcm_handle(lcm);
+		usleep(1000*1000);
 	}
 
 	delete nh;
 
 	mavconn_mavlink_msg_container_t_unsubscribe(lcm, mavlinkSub);
 	lcm_destroy(lcm);
+	g_thread_join(lcm_thread);
 
 	return 0;
 }
