@@ -3,13 +3,18 @@
 #include <ros/ros.h>
 
 #include <asctec_hl_comm/WaypointActionGoal.h>
+#include <asctec_hl_comm/GpsCustom.h>
+#include <asctec_hl_comm/mav_status.h>
+#include <asctec_hl_comm/GpsCustomCartesian.h>
+#include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <tf/transform_datatypes.h>
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
+std::string rosnamespace = "";
 bool verbose = false;
 
-int sysid = 42;
+int sysid = getSystemID();
 int compid = 199;
 
 /**
@@ -251,6 +256,124 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 }
 
 void
+poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
+{
+        // set timestamp (get NSec from ROS and convert to us)
+        uint64_t timestamp = poseStampedMsg.header.stamp.toNSec() / 1000;
+
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+
+
+        sendMAVLinkMessage(lcm, &msg);
+
+	// Convert ENU to NED
+        float x = poseStampedMsg.position.x;
+        float y = -poseStampedMsg.position.y;
+        float z = -poseStampedMsg.position.z;
+	float vx = poseStampedMsg.velocity_x;
+	float vy = -poseStampedMsg.velocity_y;
+
+        mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, vx, vy, 0.0f);
+        sendMAVLinkMessage(lcm, &msg);
+
+        if (verbose)
+        {
+                ROS_INFO("Sent Mavlink NED carthesian coordinates  message");
+        }
+}
+
+void
+fcuStatusCallback(const asctec_hl_comm::mav_status& status)
+{           
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+        
+        int vbat = status.battery_voltage*1000;
+	int curr = -1;
+	int battery_remaining = -1;
+	int cpu_load = status.cpu_load;
+	int tx_err = status.tx_packets - status.tx_packets_good;
+	int rx_err = status.rx_packets - status.rx_packets_good;                
+	int drop_comm = tx_err+rx_err;
+	int err_comm = tx_err+rx_err;
+
+	uint32_t control_sensors_present = 0;
+	uint32_t control_sensors_enabled = 0;
+	uint32_t control_sensors_health = 0;
+
+        mavlink_msg_sys_status_pack(sysid, compid, &msg, control_sensors_present,
+							 control_sensors_enabled,
+							 control_sensors_health,
+	                            cpu_load, vbat, curr, battery_remaining, drop_comm, err_comm,
+			            tx_err, rx_err, 0, 0);
+        sendMAVLinkMessage(lcm, &msg);
+        
+        if (verbose)
+        {
+                ROS_INFO("Sent Mavlink status message.");
+        }
+}
+
+void
+fcuGpsCallback(const asctec_hl_comm::GpsCustom& gpsMsg)
+{   
+        // set timestamp (get NSec from ROS and convert to us)
+        uint64_t timestamp = gpsMsg.header.stamp.toNSec() / 1000;
+        
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+        
+	sensor_msgs::NavSatStatus status = gpsMsg.status;
+	int fix = 3;
+	double lat = gpsMsg.latitude*1E7;
+	double lon = gpsMsg.longitude*1E7;
+	double alt = gpsMsg.altitude*1E3;
+	if (isnan(alt) || isinf(alt)) alt = 0;
+	double vdop = 0;//gpsMsg.position_covariance;
+	double vx = gpsMsg.velocity_x;
+	double vy = gpsMsg.velocity_y;
+	double vsum = sqrt(vx*vx+vy*vy);
+	double pres_alt = gpsMsg.pressure_height;
+                
+        mavlink_msg_gps_raw_int_pack(sysid, compid, &msg, timestamp, fix, lat, lon, alt, vdop, vdop, vsum, 0, fix);
+        sendMAVLinkMessage(lcm, &msg);
+        
+        if (verbose)
+        {
+                ROS_INFO("Sent Mavlink GPS message.");
+        }
+}
+
+void
+fcuImuCallback(const sensor_msgs::Imu& imuMsg)
+{
+        // set timestamp (get NSec from ROS and convert to us)
+        uint64_t timestamp = imuMsg.header.stamp.toNSec() / 1000;
+
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+
+        //convert quaternion to euler angles
+        const btQuaternion quat(imuMsg.orientation.x,
+                                                        imuMsg.orientation.y,
+                                                        imuMsg.orientation.z,
+                                                        imuMsg.orientation.w);
+        const btMatrix3x3 mat(quat);
+        double roll, pitch, yaw;
+        mat.getEulerYPR(yaw, pitch, roll);
+
+        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
+        sendMAVLinkMessage(lcm, &msg);
+
+        if (verbose)
+        {
+                ROS_INFO("Sent Mavlink attitude messages.");
+        }
+}
+
+
+void
 paramCheckCallback(const ros::TimerEvent&)
 {
 	bool homeShift = false;
@@ -342,6 +465,7 @@ static GOptionEntry entries[] =
 		{ "sysid", 'a', 0, G_OPTION_ARG_INT, &sysid, "ID of this system, 1-255", "42" },
 		{ "compid", 'c', 0, G_OPTION_ARG_INT, &compid, "ID of this component, 1-255", "199" },
 		{ "lcmurl", 'l', 0, G_OPTION_ARG_STRING, &lcmurl, "LCM URL to connect to", "udpm://" },
+		{ "rosnamespace", 'r', 0, G_OPTION_ARG_STRING, &rosnamespace, "ROS Namespace", "robot/" },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Verbose output", NULL },
 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, 0 } };
 
@@ -372,9 +496,15 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
-	ros::Subscriber poseStampedSub = nh->subscribe("hex/fcu/current_pose", 10, poseStampedCallback);
-	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>("hex/fcu/waypoint/goal", 10);
+	//ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
+	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
+	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
+	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
+	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/mav_status")).c_str(), 10, fcuStatusCallback);
+	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
 	
+	ROS_INFO("mavconn_asctec: Subscribed to pose stamped at: %s\n", (rosnamespace + std::string("fcu/current_pose")).c_str());
+
 	// check for changed parameters on parameter server
 	ros::Timer paramCheckTimer = nh->createTimer(ros::Duration(2.0), paramCheckCallback);
 
@@ -407,17 +537,19 @@ int main(int argc, char **argv)
 	}
 
 	// start thread(s) to listen for ROS messages
-	ros::AsyncSpinner spinner(1);
-	spinner.start();
+	//ros::AsyncSpinner spinner(1);
+	//spinner.start();
 
 	// listen for LCM messages
-	int lcm_fd = lcm_get_fileno(lcm);
+	//int lcm_fd = lcm_get_fileno(lcm);
 
 	// wait a limited amount of time for an incoming LCM message
-	struct timeval timeout = {
-		1,	// seconds
-		0	// microseconds
-	};
+	//struct timeval timeout = {
+	//	1,	// seconds
+	//	0	// microseconds
+	//};
+
+	ros::spin();
 
 	while (ros::ok())
 	{
