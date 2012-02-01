@@ -436,7 +436,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.goal.goal_pos.x = setpoint.x;
 			goal.goal.goal_pos.y = setpoint.y;
 			goal.goal.goal_pos.z = setpoint.z;
-			goal.goal.goal_yaw = setpoint.yaw;
+			goal.goal.goal_yaw = setpoint.yaw/M_PI*180.0f;
 			goal.goal.max_speed.x = 2.0f;
 			goal.goal.max_speed.y = 2.0f;
 			goal.goal.max_speed.z = 2.0f;
@@ -455,6 +455,23 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 
 			break;
 		}
+		case MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE:
+		{
+			mavlink_global_vision_position_estimate_t pos;
+			mavlink_msg_global_vision_position_estimate_decode(msg, &pos);
+			geometry_msgs::PoseStamped poseStamped;
+			
+			double tx;
+			double ty;
+			double tz;
+			
+			poseStampedMsg.pose.position.x = tx;
+			poseStampedMsg.pose.position.y = ty;
+			poseStampedMsg.pose.position.z = tz;
+			
+		}
+			break;
+	
 		default: {}
 	};
 }
