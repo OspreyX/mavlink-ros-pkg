@@ -6,6 +6,7 @@
 #include <asctec_hl_comm/GpsCustom.h>
 #include <asctec_hl_comm/mav_status.h>
 #include <asctec_hl_comm/GpsCustomCartesian.h>
+#include <mav_status/Status.h>
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <tf/transform_datatypes.h>
@@ -15,7 +16,7 @@ std::string rosnamespace = "";
 bool verbose = false;
 
 int sysid = getSystemID();
-int compid = 199;
+int compid = 201;
 
 /**
  * Grabs all mavlink_local_position_setpoint_set_t messages from MAVLINK and
@@ -220,6 +221,57 @@ utmtoll(double utmNorthing, double utmEasting, const std::string& utmZone,
 }
 
 void
+mavStatusCallback(const mav_status::Status& statusMsg)
+{
+        // set timestamp (get NSec from ROS and convert to us)
+        uint64_t timestamp = statusMsg.header.stamp.toNSec() / 1000;
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+      	uint8_t aircraft_type = MAV_TYPE_HEXAROTOR;
+	uint8_t ap_type = MAV_AUTOPILOT_GENERIC;
+
+        uint32_t base_mode = MAV_MODE_FLAG_STABILIZE_ENABLED;
+        uint32_t custom_mode = 0;
+
+	/* custom mode definition:
+	 *
+	 * 4096: MAV_CONTROLLER_LL_GPS | 2048: MAV_CONTROLLER_LL_HEIGHT | 1024: MAV_CONTROLLER_HL_POS | 512: MAV_CONTROLLER_HL_HEIGHT | 256: MAV_CONTROLLER_MANUAL | 128:RES | 64: RES | 32: RES | 16: RES | 8: UPDATE_LOC | 4: UPDATE_PTAM | 2: UPDATE_GPS | 1: INITIALIZING
+	 */
+
+	#define MAV_CONTROLLER_MANUAL_FLAG 256
+	#define MAV_CONTROLLER_HL_HEIGHT_FLAG 512
+
+	// Analyze controller state
+	switch (statusMsg.mav_controller_mode)
+	{
+	case MAV_CONTROLLER_MANUAL:
+	base_mode |= MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
+	custom_mode |= MAV_CONTROLLER_MANUAL_FLAG;
+	break;
+	case MAV_CONTROLLER_HL_HEIGHT:
+	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
+	custom_mode |= MAV_CONTROLLER_HL_HEIGHT_FLAG
+	break;
+	case MAV_CONTROLLER_HL_POS:
+	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
+        break;
+	case MAV_CONTROLLER_LL_HEIGHT:
+	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
+        break;
+	case MAV_CONTROLLER_LL_GPS:
+	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
+        break;
+	}
+	uint8_t system_status = MAV_STATE_UNINIT;
+        mavlink_msg_heartbeat_pack(sysid, compid, &msg, aircraft_type/*type*/, ap_type/*autopilot*/, base_mode/*base mode*/, custom_mode/*custom mode*/, system_status);
+        sendMAVLinkMessage(lcm, &msg);
+        if (verbose)
+        {
+                ROS_INFO("Sent Mavlink heartbeat status message");
+        }
+}
+
+void
 poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 {
 	// set timestamp (get NSec from ROS and convert to us)
@@ -263,9 +315,6 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
 
         // send MAVLINK attitude and local position messages
         mavlink_message_t msg;
-
-
-        sendMAVLinkMessage(lcm, &msg);
 
 	// Convert ENU to NED
         float x = poseStampedMsg.position.x;
@@ -500,9 +549,11 @@ int main(int argc, char **argv)
 	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
-	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/mav_status")).c_str(), 10, fcuStatusCallback);
+	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
-	
+
+	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
+
 	ROS_INFO("mavconn_asctec: Subscribed to pose stamped at: %s\n", (rosnamespace + std::string("fcu/current_pose")).c_str());
 
 	// check for changed parameters on parameter server
