@@ -244,21 +244,21 @@ mavStatusCallback(const mav_status::Status& statusMsg)
 	// Analyze controller state
 	switch (statusMsg.mav_controller_mode)
 	{
-	case MAV_CONTROLLER_MANUAL:
+	case mav_status::Status::MAV_CONTROLLER_MANUAL:
 	base_mode |= MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
 	custom_mode |= MAV_CONTROLLER_MANUAL_FLAG;
 	break;
-	case MAV_CONTROLLER_HL_HEIGHT:
+	case mav_status::Status::MAV_CONTROLLER_HL_HEIGHT:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
-	custom_mode |= MAV_CONTROLLER_HL_HEIGHT_FLAG
+	custom_mode |= MAV_CONTROLLER_HL_HEIGHT_FLAG;
 	break;
-	case MAV_CONTROLLER_HL_POS:
+	case mav_status::Status::MAV_CONTROLLER_HL_POS:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
-	case MAV_CONTROLLER_LL_HEIGHT:
+	case mav_status::Status::MAV_CONTROLLER_LL_HEIGHT:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
-	case MAV_CONTROLLER_LL_GPS:
+	case mav_status::Status::MAV_CONTROLLER_LL_GPS:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
 	}
@@ -289,13 +289,13 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
+	mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, fmod(-yaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 	sendMAVLinkMessage(lcm, &msg);
 
-	float x = poseStampedMsg.pose.position.x;
-	float y = poseStampedMsg.pose.position.y;
-	float z = poseStampedMsg.pose.position.z;
+	float x = poseStampedMsg.pose.position.y;
+	float y = poseStampedMsg.pose.position.x;
+	float z = -poseStampedMsg.pose.position.z;
 
 	mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
@@ -317,11 +317,11 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
         mavlink_message_t msg;
 
 	// Convert ENU to NED
-        float x = poseStampedMsg.position.x;
-        float y = -poseStampedMsg.position.y;
+        float x = poseStampedMsg.position.y;
+        float y = poseStampedMsg.position.x;
         float z = -poseStampedMsg.position.z;
-	float vx = poseStampedMsg.velocity_x;
-	float vy = -poseStampedMsg.velocity_y;
+	float vx = poseStampedMsg.velocity_y;
+	float vy = poseStampedMsg.velocity_x;
 
         mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
@@ -412,7 +412,8 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
         double roll, pitch, yaw;
         mat.getEulerYPR(yaw, pitch, roll);
 
-        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
+        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, -yaw, 0.0f, 0.0f, 0.0f);
+//        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
@@ -480,13 +481,14 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			mavlink_msg_set_local_position_setpoint_decode(msg, &setpoint);
 
 			// publish goal to ROS
+			double yawtemp=-(setpoint.yaw-90)/180.0f*M_PI;
 			asctec_hl_comm::WaypointActionGoal goal;
 			goal.goal_id.stamp = ros::Time::now();
-			goal.goal.goal_pos.x = setpoint.x;
-			goal.goal.goal_pos.y = setpoint.y;
-			goal.goal.goal_pos.z = setpoint.z;
-			goal.goal.goal_yaw = setpoint.yaw/M_PI*180.0f;
-			goal.goal.max_speed.x = 2.0f;
+			goal.goal.goal_pos.x = setpoint.y;
+			goal.goal.goal_pos.y = setpoint.x;
+			goal.goal.goal_pos.z = -setpoint.z;
+			goal.goal.goal_yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
+     			goal.goal.max_speed.x = 2.0f;
 			goal.goal.max_speed.y = 2.0f;
 			goal.goal.max_speed.z = 2.0f;
 			goal.goal.accuracy_position = 0.25f;
@@ -508,11 +510,11 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 		{
 			mavlink_global_vision_position_estimate_t pos;
 			mavlink_msg_global_vision_position_estimate_decode(msg, &pos);
-			geometry_msgs::PoseStamped poseStamped;
+			geometry_msgs::PoseStamped poseStampedMsg;
 			
-			double tx;
-			double ty;
-			double tz;
+			double tx = pos.y;
+			double ty = pos.x;
+			double tz = -pos.z;
 			
 			poseStampedMsg.pose.position.x = tx;
 			poseStampedMsg.pose.position.y = ty;
@@ -562,8 +564,8 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
-	//ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
-	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
+	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
+//	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
