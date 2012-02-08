@@ -488,9 +488,9 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.goal.goal_pos.y = setpoint.x;
 			goal.goal.goal_pos.z = -setpoint.z;
 			goal.goal.goal_yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
-     			goal.goal.max_speed.x = 2.0f;
-			goal.goal.max_speed.y = 2.0f;
-			goal.goal.max_speed.z = 2.0f;
+     			goal.goal.max_speed.x = 1.0f;
+			goal.goal.max_speed.y = 1.0f;
+			goal.goal.max_speed.z = 1.0f;
 			goal.goal.accuracy_position = 0.25f;
 			goal.goal.accuracy_orientation = 0.1f;
 			goal.goal.timeout = 60.0f;
