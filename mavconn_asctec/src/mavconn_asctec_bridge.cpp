@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <mavconn.h>
+#include <core/MAVConnParamClient.h>
 #include <ros/ros.h>
 
 #include <asctec_hl_comm/WaypointActionGoal.h>
@@ -14,6 +15,21 @@
 std::string lcmurl = "udpm://"; ///< host name for UDP server
 std::string rosnamespace = "";
 bool verbose = false;
+
+float transmit_setpoint = 0;
+float transmit_localization = 0;
+float src_gps = 0;
+float src_yaw = 0;
+
+typedef struct
+{
+	lcm_t* lcm;
+	MAVConnParamClient* client;
+	ros::Publisher* wp_publisher;
+	ros::Publisher* pose_stamped_publisher;
+} thread_context_t;
+
+MAVConnParamClient* paramClient;
 
 int sysid = getSystemID();
 int compid = 201;
@@ -471,7 +487,17 @@ void
 mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			   const mavconn_mavlink_msg_container_t* container, void* user)
 {
+
+	thread_context_t* context = static_cast<thread_context_t*>(user);
+
+	lcm_t* lcm = context->lcm;
 	const mavlink_message_t* msg = getMAVLinkMsgPtr(container);
+
+	// Handle param messages
+	context->client->handleMAVLinkPacket(msg);
+	ros::Publisher* waypointPub = context->wp_publisher;
+	ros::Publisher* poseStampedPub = context->pose_stamped_publisher;
+
 	switch (msg->msgid)
 	{
 		// get setpoint from MAVLINK
@@ -495,13 +521,15 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.goal.accuracy_orientation = 0.1f;
 			goal.goal.timeout = 60.0f;
 			
-			ros::Publisher* waypointPub = reinterpret_cast<ros::Publisher*>(user);
-			waypointPub->publish(goal);
-			
-			if (verbose)
+			if (paramClient->getParamValue("SP-SEND") == 1)
 			{
-				ROS_INFO("Sent ROS WaypointActionGoal message [%.2f %.2f %.2f %.2f].",
+				waypointPub->publish(goal);
+			
+				if (verbose)
+				{
+					ROS_INFO("Sent ROS WaypointActionGoal message [%.2f %.2f %.2f %.2f].",
 						 setpoint.x, setpoint.y, setpoint.z, setpoint.yaw);
+				}
 			}
 
 			break;
@@ -520,6 +548,10 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			poseStampedMsg.pose.position.y = ty;
 			poseStampedMsg.pose.position.z = tz;
 			
+			if (paramClient->getParamValue("GLOB-SEND") == 1)
+			{
+				poseStampedPub->publish(poseStampedMsg);
+			}
 		}
 			break;
 	
@@ -570,6 +602,7 @@ int main(int argc, char **argv)
 //	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("fcu/current_pose")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
@@ -587,8 +620,24 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	// Initialize parameter client before subscribing (and receiving) MAVLINK messages
+	paramClient = new MAVConnParamClient(getSystemID(), compid, lcm, "mavconn-sysctrl.cfg", verbose);
+	paramClient->setParamValue("SP-SEND", transmit_setpoint);
+	paramClient->setParamValue("GLOB-SEND", transmit_localization);
+	paramClient->setParamValue("GPS-SRC", src_gps);
+	paramClient->setParamValue("YAW-SRC", src_yaw);
+
+
+	paramClient->readParamsFromFile("mavconn-sysctrl.cfg");
+
+	thread_context_t thread_context;
+	thread_context.lcm = lcm;
+	thread_context.client = paramClient;
+	thread_context.wp_publisher = &waypointPub;
+	thread_context.pose_stamped_publisher = &poseStampedPub;
+
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
-		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &waypointPub);
+		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
 	
 	// Initialize LCM receiver thread
 	GThread* lcm_thread;
