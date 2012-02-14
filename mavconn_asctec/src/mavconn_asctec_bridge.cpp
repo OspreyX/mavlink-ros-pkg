@@ -21,6 +21,10 @@ float transmit_localization = 0;
 float src_gps = 0;
 float src_yaw = 0;
 
+float filterRoll = 0.0f;
+float filterPitch = 0.0f;
+float filterYaw = 0.0f;
+
 typedef struct
 {
 	lcm_t* lcm;
@@ -313,7 +317,7 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	float y = poseStampedMsg.pose.position.x;
 	float z = -poseStampedMsg.pose.position.z;
 
-	mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+	mavlink_msg_local_position_ned_pack(sysid, 201, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 	sendMAVLinkMessage(lcm, &msg);
 
@@ -321,6 +325,10 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	{
 		ROS_INFO("Sent Mavlink local position and attitude messages.");
 	}
+
+	filterRoll = roll;
+	filterPitch = pitch;
+	filterYaw = yaw;
 }
 
 void
@@ -339,13 +347,16 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
 	float vx = poseStampedMsg.velocity_y;
 	float vy = poseStampedMsg.velocity_x;
 
-        mavlink_msg_local_position_ned_pack(sysid, compid+1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
+        mavlink_msg_local_position_ned_pack(sysid, 202, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
         {
-                ROS_INFO("Sent Mavlink NED carthesian coordinates  message");
+                ROS_INFO("Sent Mavlink NED cartesian coordinates message");
         }
+
+	mavlink_msg_attitude_pack(sysid, 202, &msg, timestamp, filterRoll, filterPitch, fmod(-filterYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
+	sendMAVLinkMessage(lcm, &msg);
 }
 
 void
@@ -599,7 +610,7 @@ int main(int argc, char **argv)
 	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
 //	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
-//	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
+	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
 	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("fcu/current_pose")).c_str(), 10);
@@ -638,7 +649,7 @@ int main(int argc, char **argv)
 
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
-	
+
 	// Initialize LCM receiver thread
 	GThread* lcm_thread;
 	GError* err;
