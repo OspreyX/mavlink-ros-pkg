@@ -283,7 +283,7 @@ mavStatusCallback(const mav_status::Status& statusMsg)
         break;
 	}
 	uint8_t system_status = MAV_STATE_UNINIT;
-        mavlink_msg_heartbeat_pack(sysid, compid, &msg, aircraft_type/*type*/, ap_type/*autopilot*/, base_mode/*base mode*/, custom_mode/*custom mode*/, system_status);
+        mavlink_msg_heartbeat_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, aircraft_type/*type*/, ap_type/*autopilot*/, base_mode/*base mode*/, custom_mode/*custom mode*/, system_status);
         sendMAVLinkMessage(lcm, &msg);
         if (verbose)
         {
@@ -315,14 +315,14 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 
 	fusedAttYaw = yaw;
 
-	//mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
+	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
 	//sendMAVLinkMessage(lcm, &msg);
 
 	float x = poseStampedMsg.pose.position.y;
 	float y = poseStampedMsg.pose.position.x;
 	float z = -poseStampedMsg.pose.position.z;
 
-	mavlink_msg_local_position_ned_pack(sysid, 201, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+	mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 	sendMAVLinkMessage(lcm, &msg);
 
@@ -352,7 +352,7 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
 	float vx = poseStampedMsg.velocity_y;
 	float vy = poseStampedMsg.velocity_x;
 
-        mavlink_msg_local_position_ned_pack(sysid, 202, &msg, timestamp, x, y, z, vx, vy, 0.0f);
+        mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
@@ -360,7 +360,7 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
                 ROS_INFO("Sent Mavlink NED cartesian coordinates message");
         }
 
-	mavlink_msg_attitude_pack(sysid, 202, &msg, timestamp, filterRoll, filterPitch, fmod(-filterYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
+	mavlink_msg_attitude_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, filterRoll, filterPitch, fmod(-filterYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
 	sendMAVLinkMessage(lcm, &msg);
 }
 
@@ -383,7 +383,7 @@ fcuStatusCallback(const asctec_hl_comm::mav_status& status)
 	uint32_t control_sensors_enabled = 0;
 	uint32_t control_sensors_health = 0;
 
-        mavlink_msg_sys_status_pack(sysid, compid, &msg, control_sensors_present,
+        mavlink_msg_sys_status_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, control_sensors_present,
 							 control_sensors_enabled,
 							 control_sensors_health,
 	                            cpu_load, vbat, curr, battery_remaining, drop_comm, err_comm,
@@ -417,7 +417,7 @@ fcuGpsCallback(const asctec_hl_comm::GpsCustom& gpsMsg)
 	double vsum = sqrt(vx*vx+vy*vy);
 	double pres_alt = gpsMsg.pressure_height;
                 
-        mavlink_msg_gps_raw_int_pack(sysid, compid, &msg, timestamp, fix, lat, lon, alt, vdop, vdop, vsum, 0, fix);
+        mavlink_msg_gps_raw_int_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fix, lat, lon, alt, vdop, vdop, vsum, 0, fix);
         sendMAVLinkMessage(lcm, &msg);
         
         if (verbose)
@@ -447,8 +447,9 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
 	fusedAttRoll = roll;
 	fusedAttPitch = pitch;
 
-        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
-        mavlink_msg_attitude_pack(sysid, compid+1, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
+        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
+        sendMAVLinkMessage(lcm, &msg);
+	mavlink_msg_attitude_pack_chan(sysid, compid+1, MAVLINK_COMM_1, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
@@ -490,7 +491,7 @@ paramCheckCallback(const ros::TimerEvent&)
 	if (homeShift)
 	{
 		mavlink_message_t msg;
-		mavlink_msg_gps_global_origin_pack(sysid, compid, &msg,
+		mavlink_msg_gps_global_origin_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg,
 				homeLatitude, homeLongitude, homeAltitude);
 		//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 		sendMAVLinkMessage(lcm, &msg);
@@ -551,7 +552,8 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
                                 new_setpoint.yaw = setpoint.yaw/180.0f*M_PI;    
                                 	
 				mavlink_message_t tx_msg;
-				mavlink_msg_local_position_setpoint_encode(sysid, 201, &tx_msg, &new_setpoint);
+				// 201 is default component id (MAVLINK_COMM_0, no need to use pack_chan here
+				mavlink_msg_local_position_setpoint_encode(sysid, 201,&tx_msg, &new_setpoint);
 
 				sendMAVLinkMessage(lcm, &tx_msg);
 
