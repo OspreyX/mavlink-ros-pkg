@@ -16,27 +16,14 @@ std::string lcmurl = "udpm://"; ///< host name for UDP server
 std::string rosnamespace = "";
 bool verbose = false;
 
-float transmit_setpoint = 0;
-float transmit_localization = 0;
-float src_gps = 0;
-float src_yaw = 0;
-
-float filterRoll = 0.0f;
-float filterPitch = 0.0f;
-float filterYaw = 0.0f;
+int sysid = getSystemID();
+int compid = 201;
 
 typedef struct
 {
 	lcm_t* lcm;
 	MAVConnParamClient* client;
-	ros::Publisher* wp_publisher;
-	ros::Publisher* pose_stamped_publisher;
 } thread_context_t;
-
-MAVConnParamClient* paramClient;
-
-int sysid = getSystemID();
-int compid = 201;
 
 /**
  * Grabs all mavlink_local_position_setpoint_set_t messages from MAVLINK and
@@ -291,10 +278,6 @@ mavStatusCallback(const mav_status::Status& statusMsg)
         }
 }
 
-double fusedAttRoll = 0;
-double fusedAttPitch = 0;
-double fusedAttYaw = 0;
-
 void
 poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 {
@@ -313,16 +296,15 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttYaw = yaw;
-
-	//mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
-	//sendMAVLinkMessage(lcm, &msg);
+	mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, fmod(-yaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 
 	float x = poseStampedMsg.pose.position.y;
 	float y = poseStampedMsg.pose.position.x;
 	float z = -poseStampedMsg.pose.position.z;
 
-	mavlink_msg_local_position_ned_pack(sysid, 201, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+	mavlink_msg_local_position_ned_pack(sysid, compid, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 	sendMAVLinkMessage(lcm, &msg);
 
@@ -330,10 +312,6 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	{
 		ROS_INFO("Sent Mavlink local position and attitude messages.");
 	}
-
-	filterRoll = roll;
-	filterPitch = pitch;
-	filterYaw = yaw;
 }
 
 void
@@ -352,16 +330,13 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
 	float vx = poseStampedMsg.velocity_y;
 	float vy = poseStampedMsg.velocity_x;
 
-        mavlink_msg_local_position_ned_pack(sysid, 202, &msg, timestamp, x, y, z, vx, vy, 0.0f);
+        mavlink_msg_local_position_ned_pack(sysid, compid+1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
         {
-                ROS_INFO("Sent Mavlink NED cartesian coordinates message");
+                ROS_INFO("Sent Mavlink NED carthesian coordinates  message");
         }
-
-	mavlink_msg_attitude_pack(sysid, 202, &msg, timestamp, filterRoll, filterPitch, fmod(-filterYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
-	sendMAVLinkMessage(lcm, &msg);
 }
 
 void
@@ -444,11 +419,8 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
         double roll, pitch, yaw;
         mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttRoll = roll;
-	fusedAttPitch = pitch;
-
-        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
-        mavlink_msg_attitude_pack(sysid, compid+1, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
+        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, -yaw, 0.0f, 0.0f, 0.0f);
+//        mavlink_msg_attitude_pack(sysid, compid, &msg, timestamp, roll, pitch, yaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
@@ -506,17 +478,14 @@ void
 mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			   const mavconn_mavlink_msg_container_t* container, void* user)
 {
-
 	thread_context_t* context = static_cast<thread_context_t*>(user);
 
 	lcm_t* lcm = context->lcm;
-	const mavlink_message_t* msg = getMAVLinkMsgPtr(container);
 
 	// Handle param messages
 	context->client->handleMAVLinkPacket(msg);
-	ros::Publisher* waypointPub = context->wp_publisher;
-	ros::Publisher* poseStampedPub = context->pose_stamped_publisher;
 
+	const mavlink_message_t* msg = getMAVLinkMsgPtr(container);
 	switch (msg->msgid)
 	{
 		// get setpoint from MAVLINK
@@ -540,26 +509,13 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.goal.accuracy_orientation = 0.1f;
 			goal.goal.timeout = 60.0f;
 			
-			if (paramClient->getParamValue("SP-SEND") == 1)
+			ros::Publisher* waypointPub = reinterpret_cast<ros::Publisher*>(user);
+			waypointPub->publish(goal);
+			
+			if (verbose)
 			{
-				waypointPub->publish(goal);
-				// Echo back setpoint
-				mavlink_local_position_setpoint_t new_setpoint;
-				new_setpoint.x = setpoint.x;
-				new_setpoint.y = setpoint.y;    
-                                new_setpoint.z = setpoint.z;    
-                                new_setpoint.yaw = setpoint.yaw/180.0f*M_PI;    
-                                	
-				mavlink_message_t tx_msg;
-				mavlink_msg_local_position_setpoint_encode(sysid, 201, &tx_msg, &new_setpoint);
-
-				sendMAVLinkMessage(lcm, &tx_msg);
-
-				if (verbose)
-				{
-					ROS_INFO("Sent ROS WaypointActionGoal message [%.2f %.2f %.2f %.2f].",
+				ROS_INFO("Sent ROS WaypointActionGoal message [%.2f %.2f %.2f %.2f].",
 						 setpoint.x, setpoint.y, setpoint.z, setpoint.yaw);
-				}
 			}
 
 			break;
@@ -578,10 +534,6 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			poseStampedMsg.pose.position.y = ty;
 			poseStampedMsg.pose.position.z = tz;
 			
-			if (paramClient->getParamValue("GLOB-SEND") == 1)
-			{
-				poseStampedPub->publish(poseStampedMsg);
-			}
 		}
 			break;
 	
@@ -627,12 +579,11 @@ int main(int argc, char **argv)
 
 	nh = new ros::NodeHandle;
 	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
-	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
+//	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
-	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
+//	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("fcu/current_pose")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
@@ -650,25 +601,21 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	// Initialize parameter client before subscribing (and receiving) MAVLINK messages
-	paramClient = new MAVConnParamClient(getSystemID(), compid, lcm, "mavconn-asctec-bridge.cfg", verbose);
-	paramClient->setParamValue("SP-SEND", transmit_setpoint);
-	paramClient->setParamValue("GLOB-SEND", transmit_localization);
-	paramClient->setParamValue("GPS-SRC", src_gps);
-	paramClient->setParamValue("YAW-SRC", src_yaw);
-
-
-	paramClient->readParamsFromFile("mavconn-asctec-bridge.cfg");
+	paramClient = new MAVConnParamClient(systemid, compid, lcm, "mavconn-asctec-bridge.cfg", verbose);
+	
+	paramClient->setParamValue("", 0);
+    paramClient->setParamValue("EXPOSURE", exposure);
+    paramClient->setParamValue("GAIN", gain);
+    paramClient->readParamsFromFile(configFile);
 
 	thread_context_t thread_context;
 	thread_context.lcm = lcm;
 	thread_context.client = paramClient;
 	thread_context.wp_publisher = &waypointPub;
-	thread_context.pose_stamped_publisher = &poseStampedPub;
 
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
-
+	
 	// Initialize LCM receiver thread
 	GThread* lcm_thread;
 	GError* err;
