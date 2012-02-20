@@ -634,7 +634,7 @@ int main(int argc, char **argv)
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("fcu/current_pose")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
