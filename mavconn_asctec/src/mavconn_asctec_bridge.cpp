@@ -10,6 +10,7 @@
 #include <mav_status/Status.h>
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <tf/transform_datatypes.h>
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
@@ -313,7 +314,7 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttYaw = yaw;
+	fusedAttYaw = fmod(-yaw+M_PI/2+M_PI, 2.*M_PI)-M_PI;
 
 	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
 	//sendMAVLinkMessage(lcm, &msg);
@@ -447,9 +448,9 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
 	fusedAttRoll = roll;
 	fusedAttPitch = pitch;
 
-        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
+        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
-	mavlink_msg_attitude_pack_chan(sysid, compid+1, MAVLINK_COMM_1, &msg, timestamp, fusedAttRoll, fusedAttPitch, -yaw, 0.0f, 0.0f, 0.0f);
+	mavlink_msg_attitude_pack_chan(sysid, compid+1, MAVLINK_COMM_1, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
         if (verbose)
@@ -568,20 +569,20 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 		}
 		case MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE:
 		{
-			mavlink_global_vision_position_estimate_t pos;
-			mavlink_msg_global_vision_position_estimate_decode(msg, &pos);
-			geometry_msgs::PoseStamped poseStampedMsg;
+			if (msg->compid == 120 && paramClient->getParamValue("GLOB-SEND") == 1)
+                        {
+				mavlink_global_vision_position_estimate_t pos;
+				mavlink_msg_global_vision_position_estimate_decode(msg, &pos);
+				geometry_msgs::PoseWithCovarianceStamped poseStampedMsg;
 			
-			double tx = pos.y;
-			double ty = pos.x;
-			double tz = -pos.z;
+				double tx = pos.y;
+				double ty = pos.x;
+				double tz = -pos.z;
 			
-			poseStampedMsg.pose.position.x = tx;
-			poseStampedMsg.pose.position.y = ty;
-			poseStampedMsg.pose.position.z = tz;
+				poseStampedMsg.pose.pose.position.x = tx;
+				poseStampedMsg.pose.pose.position.y = ty;
+				poseStampedMsg.pose.pose.position.z = tz;
 			
-			if (paramClient->getParamValue("GLOB-SEND") == 1)
-			{
 				poseStampedPub->publish(poseStampedMsg);
 			}
 		}
@@ -634,7 +635,8 @@ int main(int argc, char **argv)
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
+	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
@@ -666,7 +668,7 @@ int main(int argc, char **argv)
 	thread_context.lcm = lcm;
 	thread_context.client = paramClient;
 	thread_context.wp_publisher = &waypointPub;
-	thread_context.pose_stamped_publisher = &poseStampedPub;
+	thread_context.pose_stamped_publisher = &poseCovStampedPub;
 
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
