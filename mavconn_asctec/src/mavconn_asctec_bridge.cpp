@@ -310,7 +310,7 @@ mavStatusCallback(const mav_status::Status& statusMsg)
 	custom_mode |= MAV_CONTROLLER_HL_HEIGHT_FLAG;
 	break;
 	case mav_status::Status::MAV_CONTROLLER_HL_POS:
-	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
+	base_mode |= MAV_MODE_FLAG_AUTO_ENABLED;
         break;
 	case mav_status::Status::MAV_CONTROLLER_LL_HEIGHT:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
@@ -319,7 +319,7 @@ mavStatusCallback(const mav_status::Status& statusMsg)
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
 	}
-	uint8_t system_status = MAV_STATE_UNINIT;
+	uint8_t system_status = MAV_STATE_ACTIVE;
         mavlink_msg_heartbeat_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, aircraft_type/*type*/, ap_type/*autopilot*/, base_mode/*base mode*/, custom_mode/*custom mode*/, system_status);
         sendMAVLinkMessage(lcm, &msg);
         if (verbose)
