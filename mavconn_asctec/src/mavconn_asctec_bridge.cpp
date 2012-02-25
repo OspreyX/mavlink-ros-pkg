@@ -16,7 +16,25 @@
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
 std::string rosnamespace = "";
+
+// Initial positions
+float mav1PositionX = 0.0f;
+float mav1PositionY = 0.0f;
+float mav1PositionZ = 0.0f;
+
+float mav2PositionX = 0.0f;
+float mav2PositionY = 0.0f;
+float mav2PositionZ = 0.0f;
+
+float mav3PositionX = 0.0f;
+float mav3PositionY = 0.0f;
+float mav3PositionZ = 0.0f;
+
+// Offsets set
+bool offsetKnown = false;
+
 bool verbose = false;
+bool fixed_offset = false;
 
 float transmit_setpoint = 0;
 float transmit_localization = 0;
@@ -58,10 +76,12 @@ double homeLatitude = 0.0;
 double homeLongitude = 0.0;
 double homeAltitude = 0.0;
 
-double globalOffsetX = 0.0;
-double globalOffsetY = 0.0;
-double globalOffsetZ = 0.0;
-double globalOffsetYaw = 0.0;
+// Mapped to parameter interface
+// only for initial values!
+float globalOffsetX = 0.0;
+float globalOffsetY = 0.0;
+float globalOffsetZ = 0.0;
+float globalOffsetYaw = 0.0;
 
 double lastPTAMNEDPositionX = 0.0;
 double lastPTAMNEDPositionY = 0.0; 
@@ -330,6 +350,7 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
+	// PTAMYAW ENU to NED yaw
 	fusedAttYaw = fmod(-yaw+M_PI/2+M_PI, 2.*M_PI)-M_PI;
 
 	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
@@ -345,9 +366,19 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	lastPTAMNEDPositionZ = z; 
 	lastPTAMNEDPositionYaw = fusedAttYaw; 
 
-	mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
-	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
-	sendMAVLinkMessage(lcm, &msg);
+	if (offsetKnown)
+	{
+		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_2, &msg, timestamp,
+		x+paramClient->getParamValue("POS-OFFSET_X"),
+		y+paramClient->getParamValue("POS-OFFSET_Y"),
+		z+paramClient->getParamValue("POS-OFFSET_Z"), 0.0f, 0.0f, 0.0f);
+        	sendMAVLinkMessage(lcm, &msg);
+	}
+	else
+	{
+		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+		sendMAVLinkMessage(lcm, &msg);
+	}
 
 	if (verbose)
 	{
@@ -430,6 +461,43 @@ schoofCallback(const std_msgs::String& string)
         // send MAVLINK attitude and local position messages
         mavlink_message_t msg;
         uint32_t timestamp = 0;
+
+	offsetKnown = true;
+
+	if (fixed_offset)
+	{
+		if (sysid == 1)
+		{
+			globalOffsetX = mav1PositionX;
+			globalOffsetY = mav1PositionY;
+			globalOffsetZ = mav1PositionZ;
+		}
+		if (sysid == 2)
+                {
+                        globalOffsetX = mav2PositionX;
+                        globalOffsetY = mav2PositionY;
+                        globalOffsetZ = mav2PositionZ;
+                }
+		if (sysid == 3)
+                {
+                        globalOffsetX = mav3PositionX;
+                        globalOffsetY = mav3PositionY;
+                        globalOffsetZ = mav3PositionZ;
+                }
+	}
+	else
+	{
+		globalOffsetX = lastGPSNEDPositionX - lastPTAMNEDPositionX;
+		globalOffsetY = lastGPSNEDPositionY - lastPTAMNEDPositionY;
+		globalOffsetZ = lastGPSNEDPositionZ - lastPTAMNEDPositionZ;
+		globalOffsetYaw = lastGPSNEDPositionYaw - lastPTAMNEDPositionYaw;
+	}
+
+	paramClient->setParamValue("POS-OFFSET_X", globalOffsetX);
+	paramClient->setParamValue("POS-OFFSET_Y", globalOffsetY);
+	paramClient->setParamValue("POS-OFFSET_Z", globalOffsetZ);
+	paramClient->setParamValue("POS-OFFSET_YAW", globalOffsetYaw);
+
         mavlink_msg_local_position_ned_system_global_offset_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, globalOffsetX, globalOffsetY, globalOffsetZ, 0/* roll */, 0/* pitch */, globalOffsetYaw);
         sendMAVLinkMessage(lcm, &msg);
         
@@ -574,9 +642,20 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			double yawtemp=-(setpoint.yaw-90)/180.0f*M_PI;
 			asctec_hl_comm::WaypointActionGoal goal;
 			goal.goal_id.stamp = ros::Time::now();
-			goal.goal.goal_pos.x = setpoint.y;
-			goal.goal.goal_pos.y = setpoint.x;
-			goal.goal.goal_pos.z = -setpoint.z;
+			
+			// OFFSET ADDED TO SETPOINT
+			if (offsetKnown)
+			{
+				goal.goal.goal_pos.x = (setpoint.y + paramClient->getParamValue("POS-OFFSET_Y"));
+				goal.goal.goal_pos.y = (setpoint.x + paramClient->getParamValue("POS-OFFSET_X"));
+				goal.goal.goal_pos.z = -(setpoint.z + paramClient->getParamValue("POS-OFFSET_Z"));
+			}
+			else
+			{
+				goal.goal.goal_pos.x = setpoint.y;
+                        	goal.goal.goal_pos.y = setpoint.x;
+                        	goal.goal.goal_pos.z = -setpoint.z;
+			}
 			goal.goal.goal_yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
      			goal.goal.max_speed.x = 2.0f;
 			goal.goal.max_speed.y = 2.0f;
@@ -622,27 +701,28 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 				double ty = pos.x;
 				double tz = -pos.z;
 
-double cRh, sRh, cPh, sPh, cYh, sYh;
+				double cRh, sRh, cPh, sPh, cYh, sYh;
 
-double r = fusedAttRoll;
-double p = fusedAttPitch;
+				double r = fusedAttRoll;
+				double p = fusedAttPitch;
 
-// FIXME Take yaw from vision
-double y = fmod((-1.0*(fusedAttYaw-M_PI))/2.0+M_PI, 2.0*M_PI)-M_PI;
+				// FIXME Take yaw from vision
+				// GLOBALYAW NED to PTAM ENU yaw
+				double y = fmod(-pos.yaw+(M_PI/2.0)+M_PI, 2.0*M_PI)-M_PI;
 
-cRh = cos(r/2.0);
-sRh = sin(r/2.0);
-cPh = cos(p/2.0);
-sPh = sin(p/2.0);
-cYh = cos(y/2.0);
-sYh = sin(y/2.0);
+				cRh = cos(r/2.0);
+				sRh = sin(r/2.0);
+				cPh = cos(p/2.0);
+				sPh = sin(p/2.0);
+				cYh = cos(y/2.0);
+				sYh = sin(y/2.0);
 
-double w, x, z;
+				double w, x, z;
 
-w = cRh*cPh*cYh + sRh*sPh*sYh;
-x = sRh*cPh*cYh - cRh*sPh*sYh;
-y = cRh*sPh*cYh + sRh*cPh*sYh;
-z = cRh*cPh*sYh - sRh*sPh*cYh;
+				w = cRh*cPh*cYh + sRh*sPh*sYh;
+				x = sRh*cPh*cYh - cRh*sPh*sYh;
+				y = cRh*sPh*cYh + sRh*cPh*sYh;
+				z = cRh*cPh*sYh - sRh*sPh*cYh;
 
 
 				poseStampedMsg.pose.pose.orientation.x = x;
@@ -681,6 +761,7 @@ static GOptionEntry entries[] =
 		{ "lcmurl", 'l', 0, G_OPTION_ARG_STRING, &lcmurl, "LCM URL to connect to", "udpm://" },
 		{ "rosnamespace", 'r', 0, G_OPTION_ARG_STRING, &rosnamespace, "ROS Namespace", "robot/" },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Verbose output", NULL },
+		{ "fixed-offset", 'f', 0, G_OPTION_ARG_NONE, &fixed_offset, "Fixed parameter-based offset", NULL },
 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, 0 } };
 
 void* lcm_wait(void* lcm_ptr)
@@ -742,6 +823,10 @@ int main(int argc, char **argv)
 	paramClient->setParamValue("GLOB-SEND", transmit_localization);
 	paramClient->setParamValue("GPS-SRC", src_gps);
 	paramClient->setParamValue("YAW-SRC", src_yaw);
+	paramClient->setParamValue("POS-OFFSET_X", globalOffsetX);
+	paramClient->setParamValue("POS-OFFSET_Y", globalOffsetY);
+	paramClient->setParamValue("POS-OFFSET_Z", globalOffsetZ);
+	paramClient->setParamValue("POS-OFFSET_YAW", globalOffsetYaw);
 
 
 	paramClient->readParamsFromFile("mavconn-asctec-bridge.cfg");
@@ -771,41 +856,10 @@ int main(int argc, char **argv)
 		g_error_free ( err ) ;
 	}
 
-	// start thread(s) to listen for ROS messages
-	//ros::AsyncSpinner spinner(1);
-	//spinner.start();
-
-	// listen for LCM messages
-	//int lcm_fd = lcm_get_fileno(lcm);
-
-	// wait a limited amount of time for an incoming LCM message
-	//struct timeval timeout = {
-	//	1,	// seconds
-	//	0	// microseconds
-	//};
-
 	ros::spin();
 
 	while (ros::ok())
 	{
-		//int lcm_fd = lcm_get_fileno(lcm);
-		//fd_set fds;
-		//FD_ZERO(&fds);
-		//FD_SET(lcm_fd, &fds);
-
-		//int status = select(lcm_fd + 1, &fds, 0, 0, &timeout);
-
-		//if (status == 0)
-		//{
-		//	printf("WAITING!\n");
-		//}
-		//else if (status !=0 && FD_ISSET(lcm_fd, &fds) && !ros::isShuttingDown())
-		//{
-			// LCM has events ready to be processed.
-		//	lcm_handle(lcm);
-		//}
-		//if (ros::isShuttingDown()) break;
-//		lcm_handle(lcm);
 		usleep(1000*1000);
 	}
 
