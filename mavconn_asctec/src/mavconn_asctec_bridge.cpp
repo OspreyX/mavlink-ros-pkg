@@ -11,6 +11,7 @@
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
@@ -56,6 +57,21 @@ const double WGS84_ECCSQ = 0.00669437999013;
 double homeLatitude = 0.0;
 double homeLongitude = 0.0;
 double homeAltitude = 0.0;
+
+double globalOffsetX = 0.0;
+double globalOffsetY = 0.0;
+double globalOffsetZ = 0.0;
+double globalOffsetYaw = 0.0;
+
+double lastPTAMNEDPositionX = 0.0;
+double lastPTAMNEDPositionY = 0.0; 
+double lastPTAMNEDPositionZ = 0.0; 
+double lastPTAMNEDPositionYaw = 0.0; 
+
+double lastGPSNEDPositionX = 5.0;
+double lastGPSNEDPositionY = 4.0;
+double lastGPSNEDPositionZ = 3.0;
+double lastGPSNEDPositionYaw = 0.3;
 
 char
 utmLetterDesignator(double latitude)
@@ -323,6 +339,12 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	float y = poseStampedMsg.pose.position.x;
 	float z = -poseStampedMsg.pose.position.z;
 
+	// Set last position values
+	lastPTAMNEDPositionX = x;
+	lastPTAMNEDPositionY = y; 
+	lastPTAMNEDPositionZ = z; 
+	lastPTAMNEDPositionYaw = fusedAttYaw; 
+
 	mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
 	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 	sendMAVLinkMessage(lcm, &msg);
@@ -352,6 +374,11 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
         float z = -poseStampedMsg.position.z;
 	float vx = poseStampedMsg.velocity_y;
 	float vy = poseStampedMsg.velocity_x;
+
+	lastGPSNEDPositionX = x;  
+        lastGPSNEDPositionY = y; 
+        lastGPSNEDPositionZ = z; 
+        lastGPSNEDPositionYaw = fusedAttYaw; 
 
         mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
@@ -396,6 +423,22 @@ fcuStatusCallback(const asctec_hl_comm::mav_status& status)
                 ROS_INFO("Sent Mavlink status message.");
         }
 }
+
+void
+schoofCallback(const std_msgs::String& string)
+{   
+        // send MAVLINK attitude and local position messages
+        mavlink_message_t msg;
+        uint32_t timestamp = 0;
+        mavlink_msg_local_position_ned_system_global_offset_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, globalOffsetX, globalOffsetY, globalOffsetZ, 0/* roll */, 0/* pitch */, globalOffsetYaw);
+        sendMAVLinkMessage(lcm, &msg);
+        
+        if (verbose)
+        {
+                ROS_INFO("Sent GLOBAL offset");
+        }
+}
+
 
 void
 fcuGpsCallback(const asctec_hl_comm::GpsCustom& gpsMsg)
@@ -578,11 +621,49 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 				double tx = pos.y;
 				double ty = pos.x;
 				double tz = -pos.z;
-			
+
+double cRh, sRh, cPh, sPh, cYh, sYh;
+
+double r = fusedAttRoll;
+double p = fusedAttPitch;
+
+// FIXME Take yaw from vision
+double y = fmod((-1.0*(fusedAttYaw-M_PI))/2.0+M_PI, 2.0*M_PI)-M_PI;
+
+cRh = cos(r/2.0);
+sRh = sin(r/2.0);
+cPh = cos(p/2.0);
+sPh = sin(p/2.0);
+cYh = cos(y/2.0);
+sYh = sin(y/2.0);
+
+double w, x, z;
+
+w = cRh*cPh*cYh + sRh*sPh*sYh;
+x = sRh*cPh*cYh - cRh*sPh*sYh;
+y = cRh*sPh*cYh + sRh*cPh*sYh;
+z = cRh*cPh*sYh - sRh*sPh*cYh;
+
+
+				poseStampedMsg.pose.pose.orientation.x = x;
+                                poseStampedMsg.pose.pose.orientation.y = y;
+                                poseStampedMsg.pose.pose.orientation.z = z;
+                                poseStampedMsg.pose.pose.orientation.w = w;
+
+
 				poseStampedMsg.pose.pose.position.x = tx;
 				poseStampedMsg.pose.pose.position.y = ty;
 				poseStampedMsg.pose.pose.position.z = tz;
 			
+				// Set covariance of vision to 0.5m std dev
+				poseStampedMsg.pose.covariance[0] = 0.5f*0.5f;
+				poseStampedMsg.pose.covariance[7] = 0.5f*0.5f;
+				poseStampedMsg.pose.covariance[14] = 0.5f*0.5f;
+				// Set covariance of vision angle to almost pi
+				poseStampedMsg.pose.covariance[21] = 2.8f*2.8f;
+				poseStampedMsg.pose.covariance[28] = 2.8f*2.8f;
+				poseStampedMsg.pose.covariance[35] = 2.8f*2.8f;
+
 				poseStampedPub->publish(poseStampedMsg);
 			}
 		}
@@ -634,6 +715,7 @@ int main(int argc, char **argv)
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
+	ros::Subscriber schoofSub = nh->subscribe((rosnamespace + std::string("schoof")).c_str(), 10, schoofCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
 	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
 	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
