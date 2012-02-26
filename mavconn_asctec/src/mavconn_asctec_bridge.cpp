@@ -670,10 +670,10 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 				// Echo back setpoint
 				mavlink_local_position_setpoint_t new_setpoint;
 				new_setpoint.x = setpoint.x;
-				new_setpoint.y = setpoint.y;    
-                                new_setpoint.z = setpoint.z;    
-                                new_setpoint.yaw = setpoint.yaw/180.0f*M_PI;    
-                                	
+				new_setpoint.y = setpoint.y;
+                                new_setpoint.z = setpoint.z;
+                                new_setpoint.yaw = setpoint.yaw/180.0f*M_PI;
+			        new_setpoint.coordinate_frame = setpoint.coordinate_frame;
 				mavlink_message_t tx_msg;
 				// 201 is default component id (MAVLINK_COMM_0, no need to use pack_chan here
 				mavlink_msg_local_position_setpoint_encode(sysid, 201,&tx_msg, &new_setpoint);
