@@ -474,9 +474,9 @@ schoofCallback(const std_msgs::String& string)
 		}
 		if (sysid == 2)
                 {
-                        globalOffsetX = paramClient->getParamValue("MAV2-INITOFF_X");
-                        globalOffsetY = paramClient->getParamValue("MAV2-INITOFF_Y");
-                        globalOffsetZ = paramClient->getParamValue("MAV2-INITOFF_Z"); 
+                        globalOffsetX = paramClient->getParamValue("MAV2-INITOFF_X")-lastPTAMNEDPositionX;
+                        globalOffsetY = paramClient->getParamValue("MAV2-INITOFF_Y")-lastPTAMNEDPositionY;
+                        globalOffsetZ = 0; 
                 }
 		if (sysid == 3)
                 {
@@ -646,9 +646,9 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			// OFFSET ADDED TO SETPOINT
 			if (offsetKnown)
 			{
-				goal.goal.goal_pos.x = (setpoint.y + paramClient->getParamValue("POS-OFFSET_Y"));
-				goal.goal.goal_pos.y = (setpoint.x + paramClient->getParamValue("POS-OFFSET_X"));
-				goal.goal.goal_pos.z = -(setpoint.z + paramClient->getParamValue("POS-OFFSET_Z"));
+				goal.goal.goal_pos.x = (setpoint.y - paramClient->getParamValue("POS-OFFSET_Y"));
+				goal.goal.goal_pos.y = (setpoint.x - paramClient->getParamValue("POS-OFFSET_X"));
+				goal.goal.goal_pos.z = -(setpoint.z - paramClient->getParamValue("POS-OFFSET_Z"));
 			}
 			else
 			{
