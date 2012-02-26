@@ -11,30 +11,11 @@
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
 
 std::string lcmurl = "udpm://"; ///< host name for UDP server
 std::string rosnamespace = "";
-
-// Initial positions
-//float mav1PositionX = 1.0f;
-//float mav1PositionY = 2.0f;
-//float mav1PositionZ = -4.0f;
-
-//float mav2PositionX = 4.0f;
-//float mav2PositionY = 5.0f;
-//float mav2PositionZ = -4.0f;
-
-//float mav3PositionX = 6.0f;
-//float mav3PositionY = 7.0f;
-//float mav3PositionZ = -4.0f;
-
-// Offsets set
-bool offsetKnown = false;
-
 bool verbose = false;
-bool fixed_offset = false;
 
 float transmit_setpoint = 0;
 float transmit_localization = 0;
@@ -75,23 +56,6 @@ const double WGS84_ECCSQ = 0.00669437999013;
 double homeLatitude = 0.0;
 double homeLongitude = 0.0;
 double homeAltitude = 0.0;
-
-// Mapped to parameter interface
-// only for initial values!
-float globalOffsetX = 0.0;
-float globalOffsetY = 0.0;
-float globalOffsetZ = 0.0;
-float globalOffsetYaw = 0.0;
-
-double lastPTAMNEDPositionX = 0.0;
-double lastPTAMNEDPositionY = 0.0; 
-double lastPTAMNEDPositionZ = 0.0; 
-double lastPTAMNEDPositionYaw = 0.0; 
-
-double lastGPSNEDPositionX = 5.0;
-double lastGPSNEDPositionY = 4.0;
-double lastGPSNEDPositionZ = 3.0;
-double lastGPSNEDPositionYaw = 0.3;
 
 char
 utmLetterDesignator(double latitude)
@@ -310,7 +274,7 @@ mavStatusCallback(const mav_status::Status& statusMsg)
 	custom_mode |= MAV_CONTROLLER_HL_HEIGHT_FLAG;
 	break;
 	case mav_status::Status::MAV_CONTROLLER_HL_POS:
-	base_mode |= MAV_MODE_FLAG_AUTO_ENABLED;
+	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
 	case mav_status::Status::MAV_CONTROLLER_LL_HEIGHT:
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
@@ -319,7 +283,7 @@ mavStatusCallback(const mav_status::Status& statusMsg)
 	base_mode |= MAV_MODE_FLAG_GUIDED_ENABLED;
         break;
 	}
-	uint8_t system_status = MAV_STATE_ACTIVE;
+	uint8_t system_status = MAV_STATE_UNINIT;
         mavlink_msg_heartbeat_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, aircraft_type/*type*/, ap_type/*autopilot*/, base_mode/*base mode*/, custom_mode/*custom mode*/, system_status);
         sendMAVLinkMessage(lcm, &msg);
         if (verbose)
@@ -350,7 +314,6 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	// PTAMYAW ENU to NED yaw
 	fusedAttYaw = fmod(-yaw+M_PI/2+M_PI, 2.*M_PI)-M_PI;
 
 	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
@@ -360,25 +323,9 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	float y = poseStampedMsg.pose.position.x;
 	float z = -poseStampedMsg.pose.position.z;
 
-	// Set last position values
-	lastPTAMNEDPositionX = x;
-	lastPTAMNEDPositionY = y; 
-	lastPTAMNEDPositionZ = z; 
-	lastPTAMNEDPositionYaw = fusedAttYaw; 
-
-	if (offsetKnown)
-	{
-		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_2, &msg, timestamp,
-		x+paramClient->getParamValue("POS-OFFSET_X"),
-		y+paramClient->getParamValue("POS-OFFSET_Y"),
-		z+paramClient->getParamValue("POS-OFFSET_Z"), 0.0f, 0.0f, 0.0f);
-        	sendMAVLinkMessage(lcm, &msg);
-	}
-	else
-	{
-		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
-		sendMAVLinkMessage(lcm, &msg);
-	}
+	mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+	//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
+	sendMAVLinkMessage(lcm, &msg);
 
 	if (verbose)
 	{
@@ -405,11 +352,6 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
         float z = -poseStampedMsg.position.z;
 	float vx = poseStampedMsg.velocity_y;
 	float vy = poseStampedMsg.velocity_x;
-
-	lastGPSNEDPositionX = x;  
-        lastGPSNEDPositionY = y; 
-        lastGPSNEDPositionZ = z; 
-        lastGPSNEDPositionYaw = fusedAttYaw; 
 
         mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
@@ -454,59 +396,6 @@ fcuStatusCallback(const asctec_hl_comm::mav_status& status)
                 ROS_INFO("Sent Mavlink status message.");
         }
 }
-
-void
-schoofCallback(const std_msgs::String& string)
-{   
-        // send MAVLINK attitude and local position messages
-        mavlink_message_t msg;
-        uint32_t timestamp = 0;
-
-	offsetKnown = true;
-
-	if (fixed_offset)
-	{
-		if (sysid == 1)
-		{
-			globalOffsetX = paramClient->getParamValue("MAV1-INITOFF_X");
-			globalOffsetY = paramClient->getParamValue("MAV1-INITOFF_Y");
-			globalOffsetZ = paramClient->getParamValue("MAV1-INITOFF_Z");
-		}
-		if (sysid == 2)
-                {
-                        globalOffsetX = paramClient->getParamValue("MAV2-INITOFF_X");
-                        globalOffsetY = paramClient->getParamValue("MAV2-INITOFF_Y");
-                        globalOffsetZ = paramClient->getParamValue("MAV2-INITOFF_Z"); 
-                }
-		if (sysid == 3)
-                {
-                        globalOffsetX = paramClient->getParamValue("MAV3-INITOFF_X");
-                        globalOffsetY = paramClient->getParamValue("MAV3-INITOFF_Y");
-                        globalOffsetZ = paramClient->getParamValue("MAV3-INITOFF_Z"); 
-                }
-	}
-	else
-	{
-		globalOffsetX = lastGPSNEDPositionX - lastPTAMNEDPositionX;
-		globalOffsetY = lastGPSNEDPositionY - lastPTAMNEDPositionY;
-		globalOffsetZ = lastGPSNEDPositionZ - lastPTAMNEDPositionZ;
-		globalOffsetYaw = lastGPSNEDPositionYaw - lastPTAMNEDPositionYaw;
-	}
-
-	paramClient->setParamValue("POS-OFFSET_X", globalOffsetX);
-	paramClient->setParamValue("POS-OFFSET_Y", globalOffsetY);
-	paramClient->setParamValue("POS-OFFSET_Z", globalOffsetZ);
-	paramClient->setParamValue("POS-OFFSET_YAW", globalOffsetYaw);
-
-        mavlink_msg_local_position_ned_system_global_offset_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, globalOffsetX, globalOffsetY, globalOffsetZ, 0/* roll */, 0/* pitch */, globalOffsetYaw);
-        sendMAVLinkMessage(lcm, &msg);
-        
-        if (verbose)
-        {
-                ROS_INFO("Sent GLOBAL offset");
-        }
-}
-
 
 void
 fcuGpsCallback(const asctec_hl_comm::GpsCustom& gpsMsg)
@@ -642,20 +531,9 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			double yawtemp=-(setpoint.yaw-90)/180.0f*M_PI;
 			asctec_hl_comm::WaypointActionGoal goal;
 			goal.goal_id.stamp = ros::Time::now();
-			
-			// OFFSET ADDED TO SETPOINT
-			if (offsetKnown)
-			{
-				goal.goal.goal_pos.x = (setpoint.y + paramClient->getParamValue("POS-OFFSET_Y"));
-				goal.goal.goal_pos.y = (setpoint.x + paramClient->getParamValue("POS-OFFSET_X"));
-				goal.goal.goal_pos.z = -(setpoint.z + paramClient->getParamValue("POS-OFFSET_Z"));
-			}
-			else
-			{
-				goal.goal.goal_pos.x = setpoint.y;
-                        	goal.goal.goal_pos.y = setpoint.x;
-                        	goal.goal.goal_pos.z = -setpoint.z;
-			}
+			goal.goal.goal_pos.x = setpoint.y;
+			goal.goal.goal_pos.y = setpoint.x;
+			goal.goal.goal_pos.z = -setpoint.z;
 			goal.goal.goal_yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
      			goal.goal.max_speed.x = 2.0f;
 			goal.goal.max_speed.y = 2.0f;
@@ -700,37 +578,15 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 				double tx = pos.y;
 				double ty = pos.x;
 				double tz = -pos.z;
-
-				double cRh, sRh, cPh, sPh, cYh, sYh;
-
-				double r = fusedAttRoll;
-				double p = fusedAttPitch;
-
-				// FIXME Take yaw from vision
-				// GLOBALYAW NED to PTAM ENU yaw
-				double y = fmod(-pos.yaw+(M_PI/2.0)+M_PI, 2.0*M_PI)-M_PI;
-
-				cRh = cos(r/2.0);
-				sRh = sin(r/2.0);
-				cPh = cos(p/2.0);
-				sPh = sin(p/2.0);
-				cYh = cos(y/2.0);
-				sYh = sin(y/2.0);
-
-				double w, x, z;
-
-				w = cRh*cPh*cYh + sRh*sPh*sYh;
-				x = sRh*cPh*cYh - cRh*sPh*sYh;
-				y = cRh*sPh*cYh + sRh*cPh*sYh;
-				z = cRh*cPh*sYh - sRh*sPh*cYh;
-
-
-				poseStampedMsg.pose.pose.orientation.x = x;
-                                poseStampedMsg.pose.pose.orientation.y = y;
-                                poseStampedMsg.pose.pose.orientation.z = z;
-                                poseStampedMsg.pose.pose.orientation.w = w;
-
-
+			
+        			double roll, pitch, yaw;
+				const btMatrix3x3 mat();
+        			
+				const btQuaternion quat();
+				//mat.setEulerYPR(yaw, pitch, roll);
+				
+				//const
+				
 				poseStampedMsg.pose.pose.position.x = tx;
 				poseStampedMsg.pose.pose.position.y = ty;
 				poseStampedMsg.pose.pose.position.z = tz;
@@ -761,7 +617,6 @@ static GOptionEntry entries[] =
 		{ "lcmurl", 'l', 0, G_OPTION_ARG_STRING, &lcmurl, "LCM URL to connect to", "udpm://" },
 		{ "rosnamespace", 'r', 0, G_OPTION_ARG_STRING, &rosnamespace, "ROS Namespace", "robot/" },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Verbose output", NULL },
-		{ "fixed-offset", 'f', 0, G_OPTION_ARG_NONE, &fixed_offset, "Fixed parameter-based offset", NULL },
 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, 0 } };
 
 void* lcm_wait(void* lcm_ptr)
@@ -796,7 +651,6 @@ int main(int argc, char **argv)
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
-	ros::Subscriber schoofSub = nh->subscribe((rosnamespace + std::string("schoof")).c_str(), 10, schoofCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
 	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
 	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
@@ -823,23 +677,6 @@ int main(int argc, char **argv)
 	paramClient->setParamValue("GLOB-SEND", transmit_localization);
 	paramClient->setParamValue("GPS-SRC", src_gps);
 	paramClient->setParamValue("YAW-SRC", src_yaw);
-	paramClient->setParamValue("POS-OFFSET_X", globalOffsetX);
-	paramClient->setParamValue("POS-OFFSET_Y", globalOffsetY);
-	paramClient->setParamValue("POS-OFFSET_Z", globalOffsetZ);
-
-	paramClient->setParamValue("MAV1-INITOFF_X", 0.0f);
-	paramClient->setParamValue("MAV1-INITOFF_Y", 0.0f);
-        paramClient->setParamValue("MAV1-INITOFF_Z", 0.0f);
-
-        paramClient->setParamValue("MAV2-INITOFF_X", 0.0f);
-        paramClient->setParamValue("MAV2-INITOFF_Y", 0.0f);
-        paramClient->setParamValue("MAV2-INITOFF_Z", 0.0f);
-
-        paramClient->setParamValue("MAV3-INITOFF_X", 0.0f);
-        paramClient->setParamValue("MAV3-INITOFF_Y", 0.0f);
-        paramClient->setParamValue("MAV3-INITOFF_Z", 0.0f);
-
-	//paramClient->setParamValue("POS-OFFSET_YAW", globalOffsetYaw);
 
 
 	paramClient->readParamsFromFile("mavconn-asctec-bridge.cfg");
@@ -869,10 +706,41 @@ int main(int argc, char **argv)
 		g_error_free ( err ) ;
 	}
 
+	// start thread(s) to listen for ROS messages
+	//ros::AsyncSpinner spinner(1);
+	//spinner.start();
+
+	// listen for LCM messages
+	//int lcm_fd = lcm_get_fileno(lcm);
+
+	// wait a limited amount of time for an incoming LCM message
+	//struct timeval timeout = {
+	//	1,	// seconds
+	//	0	// microseconds
+	//};
+
 	ros::spin();
 
 	while (ros::ok())
 	{
+		//int lcm_fd = lcm_get_fileno(lcm);
+		//fd_set fds;
+		//FD_ZERO(&fds);
+		//FD_SET(lcm_fd, &fds);
+
+		//int status = select(lcm_fd + 1, &fds, 0, 0, &timeout);
+
+		//if (status == 0)
+		//{
+		//	printf("WAITING!\n");
+		//}
+		//else if (status !=0 && FD_ISSET(lcm_fd, &fds) && !ros::isShuttingDown())
+		//{
+			// LCM has events ready to be processed.
+		//	lcm_handle(lcm);
+		//}
+		//if (ros::isShuttingDown()) break;
+//		lcm_handle(lcm);
 		usleep(1000*1000);
 	}
 
