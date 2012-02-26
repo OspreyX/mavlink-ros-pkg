@@ -3,7 +3,7 @@
 #include <core/MAVConnParamClient.h>
 #include <ros/ros.h>
 
-#include <asctec_hl_comm/WaypointActionGoal.h>
+#include <asctec_hl_comm/mav_ctrl.h>
 #include <asctec_hl_comm/GpsCustom.h>
 #include <asctec_hl_comm/mav_status.h>
 #include <asctec_hl_comm/GpsCustomCartesian.h>
@@ -639,30 +639,29 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			mavlink_msg_set_local_position_setpoint_decode(msg, &setpoint);
 
 			// publish goal to ROS
-			double yawtemp=-(setpoint.yaw-90)/180.0f*M_PI;
-			asctec_hl_comm::WaypointActionGoal goal;
-			goal.goal_id.stamp = ros::Time::now();
+			double yawtemp=-(setpoint.yaw - 90)/180.0f*M_PI;
+//			double yawtemp=-fusedAttYaw + M_PI/2.f;
+			asctec_hl_comm::mav_ctrl goal;
+			goal.header.stamp = ros::Time::now();
 			
 			// OFFSET ADDED TO SETPOINT
 			if (offsetKnown)
 			{
-				goal.goal.goal_pos.x = (setpoint.y - paramClient->getParamValue("POS-OFFSET_Y"));
-				goal.goal.goal_pos.y = (setpoint.x - paramClient->getParamValue("POS-OFFSET_X"));
-				goal.goal.goal_pos.z = -(setpoint.z - paramClient->getParamValue("POS-OFFSET_Z"));
+				goal.x = (setpoint.y - paramClient->getParamValue("POS-OFFSET_Y"));
+				goal.y = (setpoint.x - paramClient->getParamValue("POS-OFFSET_X"));
+				goal.z = -(setpoint.z - paramClient->getParamValue("POS-OFFSET_Z"));
 			}
 			else
 			{
-				goal.goal.goal_pos.x = setpoint.y;
-                        	goal.goal.goal_pos.y = setpoint.x;
-                        	goal.goal.goal_pos.z = -setpoint.z;
+				goal.x = setpoint.y;
+                        	goal.y = setpoint.x;
+                        	goal.z = -setpoint.z;
 			}
-			goal.goal.goal_yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
-     			goal.goal.max_speed.x = 2.0f;
-			goal.goal.max_speed.y = 2.0f;
-			goal.goal.max_speed.z = 2.0f;
-			goal.goal.accuracy_position = 0.25f;
-			goal.goal.accuracy_orientation = 0.1f;
-			goal.goal.timeout = 60.0f;
+			goal.yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
+     			goal.v_max_xy = 2.0f;
+			goal.v_max_z = 2.0f;
+			goal.type = asctec_hl_comm::mav_ctrl::position;
+						
 			
 			if (paramClient->getParamValue("SP-SEND") == 1)
 			{
@@ -797,7 +796,7 @@ int main(int argc, char **argv)
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Subscriber schoofSub = nh->subscribe((rosnamespace + std::string("schoof")).c_str(), 10, schoofCallback);
-	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::WaypointActionGoal>((rosnamespace + std::string("fcu/waypoint/goal")).c_str(), 10);
+	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::mav_ctrl>((rosnamespace + std::string("fcu/control")).c_str(), 10);
 	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
 	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
 
