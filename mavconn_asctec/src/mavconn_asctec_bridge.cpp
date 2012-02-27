@@ -35,6 +35,7 @@ bool offsetKnown = false;
 
 bool verbose = false;
 bool fixed_offset = false;
+bool sendingAllowed = false;
 
 float transmit_setpoint = 0;
 float transmit_localization = 0;
@@ -368,11 +369,16 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 
 	if (offsetKnown)
 	{
-		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_2, &msg, timestamp,
+		// Send changed message
+		mavlink_msg_local_position_ned_pack_chan(sysid, 201, MAVLINK_COMM_0, &msg, timestamp,
 		x+paramClient->getParamValue("POS-OFFSET_X"),
 		y+paramClient->getParamValue("POS-OFFSET_Y"),
 		z+paramClient->getParamValue("POS-OFFSET_Z"), 0.0f, 0.0f, 0.0f);
         	sendMAVLinkMessage(lcm, &msg);
+
+		// Send unchanged message
+		mavlink_msg_local_position_ned_pack_chan(sysid, 203, MAVLINK_COMM_2, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+                sendMAVLinkMessage(lcm, &msg);
 	}
 	else
 	{
@@ -411,8 +417,24 @@ poseGpsEnuCallback(const asctec_hl_comm::GpsCustomCartesian& poseStampedMsg)
         lastGPSNEDPositionZ = z; 
         lastGPSNEDPositionYaw = fusedAttYaw; 
 
-        mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
-        sendMAVLinkMessage(lcm, &msg);
+	if (offsetKnown)
+        {
+                // Send changed message
+                mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp,
+                x+paramClient->getParamValue("POS-OFFSET_X"),
+                y+paramClient->getParamValue("POS-OFFSET_Y"),
+                z+paramClient->getParamValue("POS-OFFSET_Z"), vx, vy, 0.0f);
+                sendMAVLinkMessage(lcm, &msg);
+
+                // Send unchanged message
+                mavlink_msg_local_position_ned_pack_chan(sysid, 204, MAVLINK_COMM_3, &msg, timestamp, x, y, z, 0.0f, 0.0f, 0.0f);
+                sendMAVLinkMessage(lcm, &msg);
+        }
+        else
+        {
+                mavlink_msg_local_position_ned_pack_chan(sysid, 202, MAVLINK_COMM_1, &msg, timestamp, x, y, z, vx, vy, 0.0f);
+                sendMAVLinkMessage(lcm, &msg);
+        }
 
         if (verbose)
         {
@@ -468,9 +490,9 @@ schoofCallback(const std_msgs::String& string)
 	{
 		if (sysid == 1)
 		{
-			globalOffsetX = paramClient->getParamValue("MAV1-INITOFF_X");
-			globalOffsetY = paramClient->getParamValue("MAV1-INITOFF_Y");
-			globalOffsetZ = paramClient->getParamValue("MAV1-INITOFF_Z");
+			globalOffsetX = paramClient->getParamValue("MAV1-INITOFF_X")-lastPTAMNEDPositionX;
+                        globalOffsetY = paramClient->getParamValue("MAV1-INITOFF_Y")-lastPTAMNEDPositionY;
+                        globalOffsetZ = 0.; 
 		}
 		if (sysid == 2)
                 {
@@ -480,9 +502,9 @@ schoofCallback(const std_msgs::String& string)
                 }
 		if (sysid == 3)
                 {
-                        globalOffsetX = paramClient->getParamValue("MAV3-INITOFF_X");
-                        globalOffsetY = paramClient->getParamValue("MAV3-INITOFF_Y");
-                        globalOffsetZ = paramClient->getParamValue("MAV3-INITOFF_Z"); 
+			globalOffsetX = paramClient->getParamValue("MAV3-INITOFF_X")-lastPTAMNEDPositionX;
+                        globalOffsetY = paramClient->getParamValue("MAV3-INITOFF_Y")-lastPTAMNEDPositionY;
+                        globalOffsetZ = 0.; 
                 }
 	}
 	else
@@ -663,7 +685,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.type = asctec_hl_comm::mav_ctrl::position;
 						
 			
-			if (paramClient->getParamValue("SP-SEND") == 1)
+			if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
 			{
 				waypointPub->publish(goal);
 				// Echo back setpoint
@@ -690,7 +712,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 		}
 		case MAVLINK_MSG_ID_GLOBAL_VISION_POSITION_ESTIMATE:
 		{
-			if (msg->compid == 120 && paramClient->getParamValue("GLOB-SEND") == 1)
+			if (msg->compid == 120 && paramClient->getParamValue("GLOB-SEND") == 1 && sendingAllowed)
                         {
 				mavlink_global_vision_position_estimate_t pos;
 				mavlink_msg_global_vision_position_estimate_decode(msg, &pos);
@@ -747,6 +769,23 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			}
 		}
 			break;
+		case MAVLINK_MSG_ID_COMMAND_LONG:
+{
+		mavlink_command_long_t cmd;
+		mavlink_msg_command_long_decode(msg, &cmd);
+		if (cmd.command == MAV_CMD_COMPONENT_ARM_DISARM)
+		{
+			if (cmd.param1 == 1.0f)
+			{
+				sendingAllowed = true;
+			}
+			else
+			{
+				sendingAllowed = false;
+			}
+		}
+}
+break;
 	
 		default: {}
 	};
