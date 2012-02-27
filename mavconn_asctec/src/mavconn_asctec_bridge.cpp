@@ -476,7 +476,7 @@ schoofCallback(const std_msgs::String& string)
                 {
                         globalOffsetX = paramClient->getParamValue("MAV2-INITOFF_X")-lastPTAMNEDPositionX;
                         globalOffsetY = paramClient->getParamValue("MAV2-INITOFF_Y")-lastPTAMNEDPositionY;
-                        globalOffsetZ = 0; 
+                        globalOffsetZ = 0.; 
                 }
 		if (sysid == 3)
                 {
