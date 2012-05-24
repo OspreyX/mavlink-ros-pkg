@@ -14,8 +14,8 @@
 #include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
 
-std::string lcmurl = "udpm://"; ///< host name for UDP server
-std::string rosnamespace = "";
+GString* lcmurl = g_string_new("udpm://"); ///< host name for UDP server
+GString* rosnamespace = g_string_new("/localhost");
 
 // Initial positions
 //float mav1PositionX = 1.0f;
@@ -578,8 +578,8 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
         double roll, pitch, yaw;
         mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttRoll = roll;
-	fusedAttPitch = pitch;
+	fusedAttRoll = pitch;
+	fusedAttPitch = roll;
 
         mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
@@ -796,8 +796,8 @@ static GOptionEntry entries[] =
 {
 		{ "sysid", 'a', 0, G_OPTION_ARG_INT, &sysid, "ID of this system, 1-255", "42" },
 		{ "compid", 'c', 0, G_OPTION_ARG_INT, &compid, "ID of this component, 1-255", "199" },
-		{ "lcmurl", 'l', 0, G_OPTION_ARG_STRING, &lcmurl, "LCM URL to connect to", "udpm://" },
-		{ "rosnamespace", 'r', 0, G_OPTION_ARG_STRING, &rosnamespace, "ROS Namespace", "robot/" },
+		{ "lcmurl", 'l', 0, G_OPTION_ARG_STRING, lcmurl, "LCM URL to connect to", lcmurl->str },
+		{ "rosnamespace", 'r', 0, G_OPTION_ARG_STRING, rosnamespace, "ROS Namespace", rosnamespace->str },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Verbose output", NULL },
 		{ "fixed-offset", 'f', 0, G_OPTION_ARG_NONE, &fixed_offset, "Fixed parameter-based offset", NULL },
 		{ NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, 0 } };
@@ -828,20 +828,26 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	std::string rosnamespaceStr(rosnamespace->str);
+	if (rosnamespaceStr.at(rosnamespaceStr.length() - 1) != '/')
+	{
+		rosnamespaceStr += '/';
+	}
+
 	nh = new ros::NodeHandle;
-	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespace + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
-	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespace + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
-	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespace + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
-	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespace + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
-	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespace + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
-	ros::Subscriber schoofSub = nh->subscribe((rosnamespace + std::string("schoof")).c_str(), 10, schoofCallback);
-	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::mav_ctrl>((rosnamespace + std::string("fcu/control")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
-	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespace + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
+	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
+	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
+	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
+	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
+	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespaceStr + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
+	ros::Subscriber schoofSub = nh->subscribe((rosnamespaceStr + std::string("schoof")).c_str(), 10, schoofCallback);
+	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::mav_ctrl>((rosnamespaceStr + std::string("fcu/control")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
+	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
 
-	ros::Subscriber statusSub = nh->subscribe((rosnamespace + std::string("mav_status")).c_str(), 10, mavStatusCallback);
+	ros::Subscriber statusSub = nh->subscribe((rosnamespaceStr + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
-	ROS_INFO("mavconn_asctec: Subscribed to pose stamped at: %s\n", (rosnamespace + std::string("fcu/current_pose")).c_str());
+	ROS_INFO("mavconn_asctec: Subscribed to pose stamped at: %s\n", (rosnamespaceStr + std::string("fcu/current_pose")).c_str());
 
 	// check for changed parameters on parameter server
 	ros::Timer paramCheckTimer = nh->createTimer(ros::Duration(2.0), paramCheckCallback);
@@ -849,7 +855,7 @@ int main(int argc, char **argv)
 	/**
 	 * Connect to LCM Channel and register for MAVLink messages ->
 	 */
-	lcm = lcm_create(lcmurl.c_str());
+	lcm = lcm_create(lcmurl->str);
 	if (!lcm)
 	{
 		exit(EXIT_FAILURE);
