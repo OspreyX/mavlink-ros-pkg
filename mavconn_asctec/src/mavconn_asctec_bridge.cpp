@@ -626,7 +626,7 @@ paramCheckCallback(const ros::TimerEvent&)
 	{
 		mavlink_message_t msg;
 		mavlink_msg_gps_global_origin_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg,
-				homeLatitude, homeLongitude, homeAltitude);
+				homeLatitude * 10000000.0, homeLongitude * 10000000, homeAltitude * 1000);
 		//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 		sendMAVLinkMessage(lcm, &msg);
 
@@ -773,7 +773,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 {
 		mavlink_command_long_t cmd;
 		mavlink_msg_command_long_decode(msg, &cmd);
-		if (cmd.command == MAV_CMD_COMPONENT_ARM_DISARM)
+                if (cmd.command == 144)
 		{
 			if (cmd.param1 == 1.0f)
 			{
