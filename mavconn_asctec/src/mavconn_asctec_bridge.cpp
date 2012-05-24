@@ -626,7 +626,7 @@ paramCheckCallback(const ros::TimerEvent&)
 	{
 		mavlink_message_t msg;
 		mavlink_msg_gps_global_origin_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg,
-				homeLatitude * 10000000.0, homeLongitude * 10000000, homeAltitude * 1000);
+				homeLatitude * 10000000.0, homeLongitude * 10000000.0, homeAltitude * 1000.0);
 		//mavlink_message_t_publish(lcm, "MAVLINK", &msg);
 		sendMAVLinkMessage(lcm, &msg);
 
