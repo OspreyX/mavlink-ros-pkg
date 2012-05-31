@@ -682,8 +682,8 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
                         	goal.z = -setpoint.z;
 			}
 			goal.yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
-     			goal.v_max_xy = 2.0f;
-			goal.v_max_z = 2.0f;
+     			goal.v_max_xy = -1.0f;
+			goal.v_max_z = -1.0f;
 			goal.type = asctec_hl_comm::mav_ctrl::position;
 
 			if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
