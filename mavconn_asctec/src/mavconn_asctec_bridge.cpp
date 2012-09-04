@@ -11,6 +11,7 @@
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <vismagflow_fusion/OpticalFlowWithGroundDistance.h>
 #include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
 
@@ -53,6 +54,7 @@ typedef struct
 	ros::Publisher* wp_publisher;
 	ros::Publisher* pose_stamped_publisher;
 	ros::Publisher* vicon_pose_stamped_publisher;
+	ros::Publisher* opt_flow_publisher;
 } thread_context_t;
 
 MAVConnParamClient* paramClient;
@@ -579,8 +581,8 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
         double roll, pitch, yaw;
         mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttRoll = pitch;
-	fusedAttPitch = roll;
+	fusedAttRoll = roll;
+	fusedAttPitch = -pitch;
 
         mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
@@ -653,6 +655,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 	ros::Publisher* waypointPub = context->wp_publisher;
 	ros::Publisher* poseStampedPub = context->pose_stamped_publisher;
 	ros::Publisher* viconPoseStampedPub = context->vicon_pose_stamped_publisher;
+	ros::Publisher* optFlowPub = context->opt_flow_publisher;
 
 	switch (msg->msgid)
 	{
@@ -831,6 +834,30 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 
 			break;
 		}
+		case MAVLINK_MSG_ID_OPTICAL_FLOW:
+                {
+                        // decode message
+                        mavlink_optical_flow_t flow;
+                        mavlink_msg_optical_flow_decode(msg, &flow);
+
+			vismagflow_fusion::OpticalFlowWithGroundDistance optFlowMsg;
+
+			optFlowMsg.header.stamp = ros::Time::now();
+
+			optFlowMsg.ground_distance = flow.ground_distance;
+			optFlowMsg.ground_variance = 0.1;
+			optFlowMsg.velocity_x = -flow.flow_comp_m_y;
+			optFlowMsg.velocity_y = -flow.flow_comp_m_x;
+			optFlowMsg.velocity_covariance[0] = 0.1;
+			optFlowMsg.velocity_covariance[1] = 0.0;
+			optFlowMsg.velocity_covariance[2] = 0.0;
+			optFlowMsg.velocity_covariance[3] = 0.1;
+			optFlowMsg.quality = flow.quality;
+
+			optFlowPub->publish(optFlowMsg);
+
+                        break;
+                }
 		case MAVLINK_MSG_ID_COMMAND_LONG:
 		{
 			mavlink_command_long_t cmd;
@@ -905,9 +932,10 @@ int main(int argc, char **argv)
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespaceStr + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Subscriber schoofSub = nh->subscribe((rosnamespaceStr + std::string("schoof")).c_str(), 10, schoofCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::mav_ctrl>((rosnamespaceStr + std::string("fcu/control")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespaceStr + std::string("sf_core/cvg_pose_no_cov")).c_str(), 10);
 	ros::Publisher viconPoseStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("fcu/pose")).c_str(), 10);
-	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
+	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("sf_core/cvg_pose")).c_str(), 10);
+	ros::Publisher optFlowPub = nh->advertise<vismagflow_fusion::OpticalFlowWithGroundDistance>((rosnamespaceStr + std::string("sf_core/opt_flow")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespaceStr + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
@@ -958,6 +986,7 @@ int main(int argc, char **argv)
 	thread_context.wp_publisher = &waypointPub;
 	thread_context.pose_stamped_publisher = &poseCovStampedPub;
 	thread_context.vicon_pose_stamped_publisher = &viconPoseStampedPub;
+	thread_context.opt_flow_publisher = &optFlowPub;
 
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
