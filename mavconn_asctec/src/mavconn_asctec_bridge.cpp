@@ -11,6 +11,7 @@
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <sensor_fusion_comm/ExtState.h>
 #include <vismagflow_fusion/OpticalFlowWithGroundDistance.h>
 #include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
@@ -337,6 +338,7 @@ double fusedAttPitch = 0;
 double fusedAttYaw = 0;
 
 void
+//poseStampedCallback(const sensor_fusion_comm::ExtState& poseStampedMsg)
 poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 {
 	// set timestamp (get NSec from ROS and convert to us)
@@ -354,11 +356,11 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	// PTAMYAW ENU to NED yaw
-	fusedAttYaw = fmod(-yaw+M_PI/2+M_PI, 2.*M_PI)-M_PI;
+	// NWU to NED yaw
+	fusedAttYaw = fmod(-yaw - M_PI_2, 2.*M_PI) - M_PI;
 
-	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
-	//sendMAVLinkMessage(lcm, &msg);
+	mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, roll, -pitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
+	sendMAVLinkMessage(lcm, &msg);
 
 	float x = poseStampedMsg.pose.position.y;
 	float y = poseStampedMsg.pose.position.x;
@@ -584,8 +586,8 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
 	fusedAttRoll = roll;
 	fusedAttPitch = -pitch;
 
-        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
-        sendMAVLinkMessage(lcm, &msg);
+//        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
+//        sendMAVLinkMessage(lcm, &msg);
 	mavlink_msg_attitude_pack_chan(sysid, compid+1, MAVLINK_COMM_1, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
@@ -925,6 +927,7 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
+//	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("sf_core/ext_state")).c_str(), 10, poseStampedCallback);
 	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
 	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
