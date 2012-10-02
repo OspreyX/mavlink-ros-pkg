@@ -337,10 +337,35 @@ double fusedAttRoll = 0;
 double fusedAttPitch = 0;
 double fusedAttYaw = 0;
 
-void
-//poseStampedCallback(const sensor_fusion_comm::ExtState& poseStampedMsg)
-poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
+bool
+isNormal(double x)
 {
+    int i = boost::math::fpclassify(x);
+    if (i == FP_NORMAL || i == FP_ZERO)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void
+poseStampedCallback(const sensor_fusion_comm::ExtState& poseStampedMsg)
+//poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
+{
+	if (!isNormal(poseStampedMsg.pose.position.x) ||
+	    !isNormal(poseStampedMsg.pose.position.y) ||
+	    !isNormal(poseStampedMsg.pose.position.z) ||
+	    !isNormal(poseStampedMsg.pose.orientation.x) ||
+            !isNormal(poseStampedMsg.pose.orientation.y) ||
+            !isNormal(poseStampedMsg.pose.orientation.z) ||
+            !isNormal(poseStampedMsg.pose.orientation.w))
+	{
+		return;
+	}
+
 	// set timestamp (get NSec from ROS and convert to us)
 	uint64_t timestamp = poseStampedMsg.header.stamp.toNSec() / 1000;
 
@@ -691,7 +716,7 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 			goal.v_max_z = -1.0f;
 			goal.type = asctec_hl_comm::mav_ctrl::position;
 
-			if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
+			//if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
 			{
 				waypointPub->publish(goal);
 				// Echo back setpoint
@@ -927,8 +952,8 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
-//	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("sf_core/ext_state")).c_str(), 10, poseStampedCallback);
-	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
+	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("sf_core/ext_state")).c_str(), 10, poseStampedCallback);
+//	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
 	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
