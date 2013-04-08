@@ -11,6 +11,8 @@
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <sensor_fusion_comm/ExtState.h>
+#include <vismagflow_fusion/OpticalFlowWithGroundDistance.h>
 #include <std_msgs/String.h>
 #include <tf/transform_datatypes.h>
 
@@ -52,6 +54,8 @@ typedef struct
 	MAVConnParamClient* client;
 	ros::Publisher* wp_publisher;
 	ros::Publisher* pose_stamped_publisher;
+	ros::Publisher* vicon_pose_stamped_publisher;
+	ros::Publisher* opt_flow_publisher;
 } thread_context_t;
 
 MAVConnParamClient* paramClient;
@@ -333,9 +337,35 @@ double fusedAttRoll = 0;
 double fusedAttPitch = 0;
 double fusedAttYaw = 0;
 
-void
-poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
+bool
+isNormal(double x)
 {
+    int i = boost::math::fpclassify(x);
+    if (i == FP_NORMAL || i == FP_ZERO)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void
+poseStampedCallback(const sensor_fusion_comm::ExtState& poseStampedMsg)
+//poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
+{
+	if (!isNormal(poseStampedMsg.pose.position.x) ||
+	    !isNormal(poseStampedMsg.pose.position.y) ||
+	    !isNormal(poseStampedMsg.pose.position.z) ||
+	    !isNormal(poseStampedMsg.pose.orientation.x) ||
+            !isNormal(poseStampedMsg.pose.orientation.y) ||
+            !isNormal(poseStampedMsg.pose.orientation.z) ||
+            !isNormal(poseStampedMsg.pose.orientation.w))
+	{
+		return;
+	}
+
 	// set timestamp (get NSec from ROS and convert to us)
 	uint64_t timestamp = poseStampedMsg.header.stamp.toNSec() / 1000;
 
@@ -351,11 +381,11 @@ poseStampedCallback(const geometry_msgs::PoseStamped& poseStampedMsg)
 	double roll, pitch, yaw;
 	mat.getEulerYPR(yaw, pitch, roll);
 
-	// PTAMYAW ENU to NED yaw
-	fusedAttYaw = fmod(-yaw+M_PI/2+M_PI, 2.*M_PI)-M_PI;
+	// NWU to NED yaw
+	fusedAttYaw = fmod(-yaw - M_PI_2, 2.*M_PI) - M_PI;
 
-	//mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttYaw, fmod(-fusedAttYaw+M_PI/2, 2.*M_PI), 0.0f, 0.0f, 0.0f);
-	//sendMAVLinkMessage(lcm, &msg);
+	mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, roll, -pitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
+	sendMAVLinkMessage(lcm, &msg);
 
 	float x = poseStampedMsg.pose.position.y;
 	float y = poseStampedMsg.pose.position.x;
@@ -578,11 +608,11 @@ fcuImuCallback(const sensor_msgs::Imu& imuMsg)
         double roll, pitch, yaw;
         mat.getEulerYPR(yaw, pitch, roll);
 
-	fusedAttRoll = pitch;
-	fusedAttPitch = roll;
+	fusedAttRoll = roll;
+	fusedAttPitch = -pitch;
 
-        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
-        sendMAVLinkMessage(lcm, &msg);
+//        mavlink_msg_attitude_pack_chan(sysid, compid, MAVLINK_COMM_0, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
+//        sendMAVLinkMessage(lcm, &msg);
 	mavlink_msg_attitude_pack_chan(sysid, compid+1, MAVLINK_COMM_1, &msg, timestamp, fusedAttRoll, fusedAttPitch, fusedAttYaw, 0.0f, 0.0f, 0.0f);
         sendMAVLinkMessage(lcm, &msg);
 
@@ -651,6 +681,8 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 	context->client->handleMAVLinkPacket(msg);
 	ros::Publisher* waypointPub = context->wp_publisher;
 	ros::Publisher* poseStampedPub = context->pose_stamped_publisher;
+	ros::Publisher* viconPoseStampedPub = context->vicon_pose_stamped_publisher;
+	ros::Publisher* optFlowPub = context->opt_flow_publisher;
 
 	switch (msg->msgid)
 	{
@@ -680,12 +712,11 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
                         	goal.z = -setpoint.z;
 			}
 			goal.yaw = (yawtemp>M_PI)?yawtemp-2*M_PI:yawtemp; 
-     			goal.v_max_xy = 2.0f;
-			goal.v_max_z = 2.0f;
+     			goal.v_max_xy = -1.0f;
+			goal.v_max_z = -1.0f;
 			goal.type = asctec_hl_comm::mav_ctrl::position;
-						
-			
-			if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
+
+			//if (paramClient->getParamValue("SP-SEND") == 1 && sendingAllowed)
 			{
 				waypointPub->publish(goal);
 				// Echo back setpoint
@@ -767,25 +798,111 @@ mavlinkHandler(const lcm_recv_buf_t* rbuf, const char* channel,
 
 				poseStampedPub->publish(poseStampedMsg);
 			}
-		}
+			
 			break;
-		case MAVLINK_MSG_ID_COMMAND_LONG:
-{
-		mavlink_command_long_t cmd;
-		mavlink_msg_command_long_decode(msg, &cmd);
-                if (cmd.command == 144)
-		{
-			if (cmd.param1 == 1.0f)
-			{
-				sendingAllowed = true;
-			}
-			else
-			{
-				sendingAllowed = false;
-			}
 		}
-}
-break;
+		case MAVLINK_MSG_ID_VICON_POSITION_ESTIMATE:
+		{
+			mavlink_vicon_position_estimate_t pos;
+			mavlink_msg_vicon_position_estimate_decode(msg, &pos);
+			geometry_msgs::PoseWithCovarianceStamped poseStampedMsg;
+		
+			double tx = pos.y;
+			double ty = pos.x;
+			double tz = -pos.z;
+
+			double cRh, sRh, cPh, sPh, cYh, sYh;
+
+			double r = pos.roll;
+			double p = pos.pitch;
+
+			// GLOBALYAW NED to PTAM ENU yaw
+			double y = fmod(-pos.yaw+(M_PI/2.0)+M_PI, 2.0*M_PI)-M_PI;
+
+			cRh = cos(r/2.0);
+			sRh = sin(r/2.0);
+			cPh = cos(p/2.0);
+			sPh = sin(p/2.0);
+			cYh = cos(y/2.0);
+			sYh = sin(y/2.0);
+
+			double w, x, z;
+
+			w = cRh*cPh*cYh + sRh*sPh*sYh;
+			x = sRh*cPh*cYh - cRh*sPh*sYh;
+			y = cRh*sPh*cYh + sRh*cPh*sYh;
+			z = cRh*cPh*sYh - sRh*sPh*cYh;
+
+ 			poseStampedMsg.pose.pose.orientation.x = x;
+                        poseStampedMsg.pose.pose.orientation.y = y;
+                        poseStampedMsg.pose.pose.orientation.z = z;
+                        poseStampedMsg.pose.pose.orientation.w = w;
+
+			poseStampedMsg.pose.pose.position.x = tx;
+			poseStampedMsg.pose.pose.position.y = ty;
+			poseStampedMsg.pose.pose.position.z = tz;
+		
+			// Set covariance of vicon to 0.05m std dev
+			poseStampedMsg.pose.covariance[0] = 0.05f*0.05f;
+			poseStampedMsg.pose.covariance[7] = 0.05f*0.05f;
+			poseStampedMsg.pose.covariance[14] = 0.05f*0.05f;
+	
+			// Set covariance of vicon angle to 0.01 rad
+			poseStampedMsg.pose.covariance[21] = 0.01f*0.01f;
+			poseStampedMsg.pose.covariance[28] = 0.01f*0.01f;
+			poseStampedMsg.pose.covariance[35] = 0.01f*0.01f;
+
+			viconPoseStampedPub->publish(poseStampedMsg);
+
+			if (verbose)
+			{
+				ROS_INFO("Sent ROS geometry_msgs::PoseWithCovarianceStamped message.");
+			}
+
+			break;
+		}
+		case MAVLINK_MSG_ID_OPTICAL_FLOW:
+                {
+                        // decode message
+                        mavlink_optical_flow_t flow;
+                        mavlink_msg_optical_flow_decode(msg, &flow);
+
+			vismagflow_fusion::OpticalFlowWithGroundDistance optFlowMsg;
+
+			optFlowMsg.header.stamp = ros::Time::now();
+
+			optFlowMsg.ground_distance = flow.ground_distance;
+			optFlowMsg.ground_variance = 0.1;
+			optFlowMsg.velocity_x = -flow.flow_comp_m_y;
+			optFlowMsg.velocity_y = -flow.flow_comp_m_x;
+			optFlowMsg.velocity_covariance[0] = 0.1;
+			optFlowMsg.velocity_covariance[1] = 0.0;
+			optFlowMsg.velocity_covariance[2] = 0.0;
+			optFlowMsg.velocity_covariance[3] = 0.1;
+			optFlowMsg.quality = flow.quality;
+
+			optFlowPub->publish(optFlowMsg);
+
+                        break;
+                }
+		case MAVLINK_MSG_ID_COMMAND_LONG:
+		{
+			mavlink_command_long_t cmd;
+			mavlink_msg_command_long_decode(msg, &cmd);
+               		if (cmd.command == MAV_CMD_COMPONENT_ARM_DISARM)
+			{
+				if (cmd.param1 == 1.0f)
+				{
+					sendingAllowed = true;
+				}
+				else
+				{
+					sendingAllowed = false;
+				}
+			}
+
+			break;
+		}
 	
 		default: {}
 	};
@@ -835,15 +952,18 @@ int main(int argc, char **argv)
 	}
 
 	nh = new ros::NodeHandle;
-	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
+	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("sf_core/ext_state")).c_str(), 10, poseStampedCallback);
+//	ros::Subscriber poseStampedSub = nh->subscribe((rosnamespaceStr + std::string("fcu/current_pose")).c_str(), 10, poseStampedCallback);
 	ros::Subscriber fcuImuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/imu")).c_str(), 10, fcuImuCallback);	
 	ros::Subscriber fcuGpsCustomSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_custom")).c_str(), 10, fcuGpsCallback);
 	ros::Subscriber poseGpsEnuSub = nh->subscribe((rosnamespaceStr + std::string("fcu/gps_position_custom")).c_str(), 10, poseGpsEnuCallback);
 	ros::Subscriber fcuStatusSub = nh->subscribe((rosnamespaceStr + std::string("fcu/status")).c_str(), 10, fcuStatusCallback);
 	ros::Subscriber schoofSub = nh->subscribe((rosnamespaceStr + std::string("schoof")).c_str(), 10, schoofCallback);
 	ros::Publisher waypointPub = nh->advertise<asctec_hl_comm::mav_ctrl>((rosnamespaceStr + std::string("fcu/control")).c_str(), 10);
-	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose_no_cov")).c_str(), 10);
-	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("sensor_fusion/cvg_pose")).c_str(), 10);
+	ros::Publisher poseStampedPub = nh->advertise<geometry_msgs::PoseStamped>((rosnamespaceStr + std::string("sf_core/cvg_pose_no_cov")).c_str(), 10);
+	ros::Publisher viconPoseStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("fcu/pose")).c_str(), 10);
+	ros::Publisher poseCovStampedPub = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>((rosnamespaceStr + std::string("sf_core/cvg_pose")).c_str(), 10);
+	ros::Publisher optFlowPub = nh->advertise<vismagflow_fusion::OpticalFlowWithGroundDistance>((rosnamespaceStr + std::string("sf_core/opt_flow")).c_str(), 10);
 
 	ros::Subscriber statusSub = nh->subscribe((rosnamespaceStr + std::string("mav_status")).c_str(), 10, mavStatusCallback);
 
@@ -893,6 +1013,8 @@ int main(int argc, char **argv)
 	thread_context.client = paramClient;
 	thread_context.wp_publisher = &waypointPub;
 	thread_context.pose_stamped_publisher = &poseCovStampedPub;
+	thread_context.vicon_pose_stamped_publisher = &viconPoseStampedPub;
+	thread_context.opt_flow_publisher = &optFlowPub;
 
 	mavconn_mavlink_msg_container_t_subscription_t* mavlinkSub =
 		mavconn_mavlink_msg_container_t_subscribe(lcm, "MAVLINK", &mavlinkHandler, &thread_context);
