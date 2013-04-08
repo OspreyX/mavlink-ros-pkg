@@ -16,5 +16,3 @@
   <depend package="asctec_hl_comm"/>
   <depend package="mav_status"/>
 </package>
-
-

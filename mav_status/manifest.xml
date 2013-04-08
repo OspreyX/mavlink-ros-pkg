@@ -1,0 +1,17 @@
+<package>
+  <description brief="mav_status">
+
+     mav_status
+
+  </description>
+  <author>Markus Achtelik</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/mav_status</url>
+  <depend package="roscpp"/>
+  <depend package="asctec_hl_comm"/>
+  <depend package="geometry_msgs"/>
+
+</package>
+
+
